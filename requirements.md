@@ -1,7 +1,7 @@
 # Trip Budget Planner Requirements
 
 ## Overview
-Build a responsive multi-page travel planning website with a backend that stores trip plans on disk and exposes API endpoints for trip history and aggregate insights.
+Build a responsive multi-page travel planning website with a backend that stores trip plans on disk and exposes API endpoints for trip history, aggregate insights, and saved-trip comparison workflows.
 
 ## Core User Stories
 - As a traveler, I can create a trip budget plan from the home page.
@@ -9,13 +9,15 @@ Build a responsive multi-page travel planning website with a backend that stores
 - As a traveler, I can review previously saved trips on a history page.
 - As a traveler, I can filter saved trips by travel style.
 - As a traveler, I can review aggregate trip insights on a dedicated insights page.
+- As a traveler, I can compare saved trips side by side on a dedicated comparison page.
 - As a traveler, I can clear all saved trips and see the UI update immediately.
 
 ## Functional Requirements
-- Provide three pages:
+- Provide four pages:
   - Home planner page
   - History page
   - Insights page
+  - Compare page
 - Provide a navigation bar linking all pages.
 - Home page form fields:
   - Trip name: required text, 2 to 40 characters after trimming.
@@ -51,7 +53,14 @@ Build a responsive multi-page travel planning website with a backend that stores
   - Show average daily budget
   - Show most common travel style
   - Show count of trips marked `Too Tight`
+- Compare page must:
+  - Load saved trips from the backend
+  - Highlight the best daily-value trip
+  - Highlight the highest total-budget trip
+  - Show the count of `Too Tight` trips
+  - Render a side-by-side comparison table for saved plans
 - Provide empty states when no trips exist.
+- Provide a helpful runtime notice when pages are opened directly from disk without the backend.
 
 ## Backend Requirements
 - Implement a Node.js backend server.
@@ -63,6 +72,7 @@ Build a responsive multi-page travel planning website with a backend that stores
   - `GET /api/stats`
 - Validate incoming payloads on the server before saving.
 - Return JSON responses with appropriate success or validation error messages.
+- Serve both clean routes and `.html` routes for multi-page navigation.
 
 ## Risk Rules
 - Compute daily-per-traveler budget as `total budget / days / travelers`.
@@ -93,3 +103,5 @@ Build a responsive multi-page travel planning website with a backend that stores
 - Support desktop and mobile layouts.
 - Keep the visual system distinctive and consistent across pages.
 - Keep all artifacts runnable locally with Node and a modern Chromium browser.
+- Maintain automated end-to-end regression coverage for all key pages and flows.
+- Generate actionable bug artifacts on test failures.
