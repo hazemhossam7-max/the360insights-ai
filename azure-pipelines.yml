@@ -1,0 +1,56 @@
+trigger:
+- main
+
+pr:
+- main
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  CI: "true"
+  PLAYWRIGHT_JUNIT_OUTPUT_NAME: "junit.xml"
+
+steps:
+- checkout: self
+  clean: true
+
+- task: NodeTool@0
+  inputs:
+    versionSpec: "20.x"
+  displayName: "Use Node.js 20"
+
+- script: npm ci
+  displayName: "Install dependencies"
+
+- script: npx playwright install --with-deps chromium
+  displayName: "Install Playwright browser"
+
+- script: npm run test:e2e
+  displayName: "Run Playwright end-to-end tests"
+
+- task: PublishTestResults@2
+  displayName: "Publish JUnit test results"
+  condition: succeededOrFailed()
+  inputs:
+    testResultsFormat: "JUnit"
+    testResultsFiles: "test-results/junit.xml"
+    failTaskOnFailedTests: true
+    testRunTitle: "Trip Budget Planner E2E"
+
+- task: PublishPipelineArtifact@1
+  displayName: "Publish Playwright HTML report"
+  condition: succeededOrFailed()
+  inputs:
+    targetPath: "playwright-report"
+    artifact: "playwright-report"
+    publishLocation: "pipeline"
+
+- task: PublishPipelineArtifact@1
+  displayName: "Publish raw test artifacts"
+  condition: succeededOrFailed()
+  inputs:
+    targetPath: "test-results"
+    artifact: "test-results"
+    publishLocation: "pipeline"
+
