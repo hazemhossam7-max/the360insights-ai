@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Trip Budget Planner</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Instrument+Serif:ital@0;1&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body class="page-planner">
+    <main class="page-shell">
+      <header class="topbar">
+        <a class="brand" href="./index.html">Trip Budget Planner</a>
+        <nav class="nav-links" aria-label="Primary">
+          <a href="./index.html" class="active">Planner</a>
+          <a href="./history.html">History</a>
+          <a href="./insights.html">Insights</a>
+          <a href="./compare.html">Compare</a>
+        </nav>
+      </header>
+
+      <div id="runtime-notice" class="runtime-notice hidden"></div>
+
+      <section class="hero">
+        <p class="eyebrow">Persistent travel planning</p>
+        <h1>Plan it, save it, compare it.</h1>
+        <p class="hero-copy">
+          Build a trip budget, store it in the backend, and review travel history
+          and portfolio-level insights across multiple trips.
+        </p>
+        <div class="hero-badges">
+          <span class="chip muted">Fast planning</span>
+          <span class="chip muted">Saved history</span>
+          <span class="chip muted">Side-by-side compare</span>
+        </div>
+      </section>
+
+      <section class="planner-card">
+        <div class="planner-grid">
+          <form id="budget-form" novalidate>
+            <div class="form-header">
+              <h2>Planner Inputs</h2>
+              <p>Generate a trip snapshot first, then save it to your travel log.</p>
+            </div>
+
+            <div class="field-group">
+              <label for="tripName">Trip name</label>
+              <input id="tripName" name="tripName" type="text" placeholder="Spring in Lisbon" />
+              <p class="error-message" data-error-for="tripName"></p>
+            </div>
+
+            <div class="field-group">
+              <label for="destination">Destination</label>
+              <input id="destination" name="destination" type="text" placeholder="Lisbon, Portugal" />
+              <p class="error-message" data-error-for="destination"></p>
+            </div>
+
+            <div class="field-row">
+              <div class="field-group">
+                <label for="budget">Total budget ($)</label>
+                <input id="budget" name="budget" type="number" min="100" max="50000" placeholder="2400" />
+                <p class="error-message" data-error-for="budget"></p>
+              </div>
+              <div class="field-group">
+                <label for="days">Days</label>
+                <input id="days" name="days" type="number" min="1" max="30" placeholder="6" />
+                <p class="error-message" data-error-for="days"></p>
+              </div>
+            </div>
+
+            <div class="field-row">
+              <div class="field-group">
+                <label for="travelers">Travelers</label>
+                <input id="travelers" name="travelers" type="number" min="1" max="10" placeholder="2" />
+                <p class="error-message" data-error-for="travelers"></p>
+              </div>
+              <div class="field-group">
+                <label for="style">Travel style</label>
+                <select id="style" name="style">
+                  <option value="">Select a style</option>
+                  <option value="Shoestring">Shoestring</option>
+                  <option value="Balanced">Balanced</option>
+                  <option value="Comfort">Comfort</option>
+                </select>
+                <p class="error-message" data-error-for="style"></p>
+              </div>
+            </div>
+
+            <div class="field-group">
+              <label for="notes">Notes</label>
+              <textarea id="notes" name="notes" rows="3" maxlength="160" placeholder="Museum-heavy itinerary, central hotel, short train rides."></textarea>
+              <p class="error-message" data-error-for="notes"></p>
+            </div>
+
+            <div class="action-row action-row-wide">
+              <button type="submit" class="primary-button">Plan My Budget</button>
+              <button type="button" class="accent-button" id="save-button" disabled>Save Trip</button>
+              <button type="button" class="secondary-button" id="reset-button">Reset</button>
+            </div>
+
+            <p id="save-feedback" class="feedback-line"></p>
+          </form>
+
+          <section class="results-panel" aria-live="polite">
+            <div class="results-header">
+              <h2>Your Snapshot</h2>
+              <span id="status-pill" class="status-pill muted">Awaiting input</span>
+            </div>
+
+            <div id="empty-state" class="empty-state">
+              Fill out the planner to generate your travel budget snapshot.
+            </div>
+
+            <div id="results-content" class="results-content hidden">
+              <div class="summary-grid">
+                <article class="summary-card">
+                  <span>Total budget</span>
+                  <strong id="total-budget-value">--</strong>
+                </article>
+                <article class="summary-card">
+                  <span>Daily budget</span>
+                  <strong id="daily-budget-value">--</strong>
+                </article>
+                <article class="summary-card">
+                  <span>Per traveler</span>
+                  <strong id="per-traveler-value">--</strong>
+                </article>
+                <article class="summary-card">
+                  <span>Daily per traveler</span>
+                  <strong id="daily-per-traveler-value">--</strong>
+                </article>
+                <article class="summary-card accent span-two">
+                  <span>Risk level</span>
+                  <strong id="risk-level-value">--</strong>
+                </article>
+              </div>
+
+              <div class="allocation-block">
+                <div class="allocation-header">
+                  <h3>Recommended allocation</h3>
+                  <p id="style-summary">Style breakdown</p>
+                </div>
+                <div class="allocation-list" id="allocation-list"></div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <section class="section-card section-card-soft">
+        <div class="card-inner journey-grid">
+          <article class="journey-card">
+            <p class="eyebrow">Step 1</p>
+            <h2>Generate a snapshot</h2>
+            <p class="muted-text">Draft a realistic budget split with instant risk feedback and daily spend guidance.</p>
+          </article>
+          <article class="journey-card">
+            <p class="eyebrow">Step 2</p>
+            <h2>Save it to history</h2>
+            <p class="muted-text">Keep every option in one place so you can revisit the numbers without retyping details.</p>
+          </article>
+          <article class="journey-card">
+            <p class="eyebrow">Step 3</p>
+            <h2>Compare and decide</h2>
+            <p class="muted-text">Jump into the compare view to see best-value trips and spot expensive outliers quickly.</p>
+          </article>
+        </div>
+      </section>
+    </main>
+
+    <script src="./planner.js"></script>
+  </body>
+</html>

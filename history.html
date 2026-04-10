@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Trip History</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Instrument+Serif:ital@0;1&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body class="page-history">
+    <main class="page-shell">
+      <header class="topbar">
+        <a class="brand" href="./index.html">Trip Budget Planner</a>
+        <nav class="nav-links" aria-label="Primary">
+          <a href="./index.html">Planner</a>
+          <a href="./history.html" class="active">History</a>
+          <a href="./insights.html">Insights</a>
+          <a href="./compare.html">Compare</a>
+        </nav>
+      </header>
+
+      <div id="runtime-notice" class="runtime-notice hidden"></div>
+
+      <section class="page-intro">
+        <p class="eyebrow">Saved plans</p>
+        <h1>Trip history</h1>
+        <p>Review every persisted trip, filter by style, and clear the log when you want a fresh start.</p>
+      </section>
+
+      <section class="section-card">
+        <div class="card-inner">
+          <div class="toolbar">
+            <div>
+              <h2>Saved Trips</h2>
+              <p class="muted-text">Newest trips should appear first.</p>
+            </div>
+            <div class="action-row">
+              <select id="style-filter" aria-label="Filter saved trips by style">
+                <option value="All">All styles</option>
+                <option value="Shoestring">Shoestring</option>
+                <option value="Balanced">Balanced</option>
+                <option value="Comfort">Comfort</option>
+              </select>
+              <button id="clear-trips-button" class="danger-button" type="button">Clear All Trips</button>
+            </div>
+          </div>
+
+          <div id="history-empty-state" class="empty-state">No saved trips yet. Save a plan from the Planner page.</div>
+          <div id="history-list" class="history-list hidden"></div>
+        </div>
+      </section>
+    </main>
+
+    <script src="./history.js"></script>
+  </body>
+</html>

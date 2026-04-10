@@ -1,0 +1,13 @@
+{
+  "name": "trip-budget-planner",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Multi-page trip budget planner with backend persistence and browser QA automation.",
+  "scripts": {
+    "serve": "node server.js",
+    "test:e2e": "node qa_runner.mjs"
+  },
+  "dependencies": {
+    "playwright": "^1.54.2"
+  }
+}

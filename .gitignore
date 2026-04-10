@@ -1,0 +1,5 @@
+node_modules/
+bug_reports/
+data/
+*.log
+

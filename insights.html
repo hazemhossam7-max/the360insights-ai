@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Trip Insights</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Instrument+Serif:ital@0;1&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body class="page-insights">
+    <main class="page-shell">
+      <header class="topbar">
+        <a class="brand" href="./index.html">Trip Budget Planner</a>
+        <nav class="nav-links" aria-label="Primary">
+          <a href="./index.html">Planner</a>
+          <a href="./history.html">History</a>
+          <a href="./insights.html" class="active">Insights</a>
+          <a href="./compare.html">Compare</a>
+        </nav>
+      </header>
+
+      <div id="runtime-notice" class="runtime-notice hidden"></div>
+
+      <section class="page-intro">
+        <p class="eyebrow">Portfolio view</p>
+        <h1>Trip insights</h1>
+        <p>Track how your saved trips compare at a glance and spot budgets that are too optimistic.</p>
+      </section>
+
+      <section class="section-card">
+        <div class="card-inner">
+          <div id="insights-empty-state" class="empty-state">No saved trips yet. Insights will appear after you save at least one trip.</div>
+
+          <div id="insights-content" class="hidden">
+            <div class="stats-grid">
+              <article class="stat-card">
+                <span>Total trips</span>
+                <strong id="stat-total-trips">0</strong>
+              </article>
+              <article class="stat-card">
+                <span>Average budget</span>
+                <strong id="stat-average-budget">$0</strong>
+              </article>
+              <article class="stat-card">
+                <span>Average daily budget</span>
+                <strong id="stat-average-daily-budget">$0</strong>
+              </article>
+              <article class="stat-card accent">
+                <span>Most common style</span>
+                <strong id="stat-most-common-style">None</strong>
+              </article>
+            </div>
+
+            <ul class="highlights-list" id="highlights-list">
+              <li><strong id="stat-too-tight-count">0</strong> trip(s) are marked Too Tight.</li>
+              <li><strong id="stat-total-budget-sum">$0</strong> total budget tracked across all saved trips.</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script src="./insights.js"></script>
+  </body>
+</html>

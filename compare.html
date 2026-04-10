@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Trip Compare</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Instrument+Serif:ital@0;1&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body class="page-compare">
+    <main class="page-shell">
+      <header class="topbar">
+        <a class="brand" href="./index.html">Trip Budget Planner</a>
+        <nav class="nav-links" aria-label="Primary">
+          <a href="./index.html">Planner</a>
+          <a href="./history.html">History</a>
+          <a href="./insights.html">Insights</a>
+          <a href="./compare.html" class="active">Compare</a>
+        </nav>
+      </header>
+
+      <div id="runtime-notice" class="runtime-notice hidden"></div>
+
+      <section class="page-intro">
+        <p class="eyebrow">Decision room</p>
+        <h1>Compare saved trips side by side</h1>
+        <p>See which plan is the leanest, the highest-touch, and the best value per traveler before you commit.</p>
+      </section>
+
+      <section class="section-card">
+        <div class="card-inner">
+          <div id="compare-empty-state" class="empty-state">
+            Save at least one trip from the Planner page to unlock comparisons.
+          </div>
+
+          <div id="compare-content" class="hidden">
+            <div class="stats-grid compare-spotlights">
+              <article class="stat-card">
+                <span>Best daily value</span>
+                <strong id="compare-best-value">--</strong>
+                <p id="compare-best-value-copy" class="stat-copy">Waiting for saved trips.</p>
+              </article>
+              <article class="stat-card">
+                <span>Highest total budget</span>
+                <strong id="compare-highest-budget">--</strong>
+                <p id="compare-highest-budget-copy" class="stat-copy">Waiting for saved trips.</p>
+              </article>
+              <article class="stat-card accent">
+                <span>Tight budget watchlist</span>
+                <strong id="compare-tight-count">0</strong>
+                <p id="compare-tight-copy" class="stat-copy">Trips with very limited daily room.</p>
+              </article>
+            </div>
+
+            <div class="compare-table-wrap">
+              <table class="compare-table">
+                <thead>
+                  <tr>
+                    <th scope="col">Trip</th>
+                    <th scope="col">Style</th>
+                    <th scope="col">Budget</th>
+                    <th scope="col">Daily</th>
+                    <th scope="col">Per traveler</th>
+                    <th scope="col">Risk</th>
+                  </tr>
+                </thead>
+                <tbody id="compare-table-body"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script src="./compare.js"></script>
+  </body>
+</html>

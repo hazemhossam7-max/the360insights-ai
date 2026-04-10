@@ -1,0 +1,165 @@
+[
+  {
+    "id": "TC-001",
+    "type": "smoke",
+    "title": "Home page loads with planner and navigation",
+    "steps": [
+      "Open the home page",
+      "Observe the hero title, planner form, and navigation links"
+    ],
+    "expectedResult": "The page renders the Trip Budget Planner heading, planner form controls, and links for Planner, History, and Insights."
+  },
+  {
+    "id": "TC-002",
+    "type": "positive",
+    "title": "Valid trip plan calculates summary and enables save",
+    "steps": [
+      "Enter a valid trip",
+      "Submit the planner form"
+    ],
+    "expectedResult": "The summary values are rendered correctly and the Save Trip button becomes enabled."
+  },
+  {
+    "id": "TC-003",
+    "type": "positive",
+    "title": "Saving a valid trip persists it to history",
+    "steps": [
+      "Generate a valid trip plan",
+      "Click Save Trip",
+      "Open the History page"
+    ],
+    "expectedResult": "The saved trip appears in history with destination, style, budget, and risk details."
+  },
+  {
+    "id": "TC-004",
+    "type": "positive",
+    "title": "History filter shows only matching styles",
+    "steps": [
+      "Save trips with different travel styles",
+      "Open the History page",
+      "Filter by Comfort"
+    ],
+    "expectedResult": "Only Comfort trips remain visible in the history list."
+  },
+  {
+    "id": "TC-005",
+    "type": "positive",
+    "title": "Insights page shows aggregate stats from saved data",
+    "steps": [
+      "Save multiple trips",
+      "Open the Insights page"
+    ],
+    "expectedResult": "The page shows total trip count, average total budget, average daily budget, most common style, and Too Tight count."
+  },
+  {
+    "id": "TC-006",
+    "type": "positive",
+    "title": "Reset clears form and disables save",
+    "steps": [
+      "Generate a valid plan",
+      "Click Reset"
+    ],
+    "expectedResult": "The form is cleared, results return to placeholders, and Save Trip is disabled again."
+  },
+  {
+    "id": "TC-007",
+    "type": "negative",
+    "title": "Blank submission shows required errors",
+    "steps": [
+      "Open the home page",
+      "Submit the planner form without entering values"
+    ],
+    "expectedResult": "Required field errors appear and no trip plan is generated."
+  },
+  {
+    "id": "TC-008",
+    "type": "negative",
+    "title": "Trip name below minimum is rejected",
+    "steps": [
+      "Enter a one-character trip name with otherwise valid values",
+      "Submit the planner form"
+    ],
+    "expectedResult": "The trip name validation message appears and planning does not complete."
+  },
+  {
+    "id": "TC-009",
+    "type": "negative",
+    "title": "Server rejects malformed trip payload",
+    "steps": [
+      "Send a malformed POST request to the backend"
+    ],
+    "expectedResult": "The backend returns a validation error response and does not store the trip."
+  },
+  {
+    "id": "TC-010",
+    "type": "boundary",
+    "title": "Minimum valid values compute Too Tight risk",
+    "steps": [
+      "Enter the minimum valid budget and counts",
+      "Submit the planner form"
+    ],
+    "expectedResult": "The plan is generated and the risk level is Too Tight."
+  },
+  {
+    "id": "TC-011",
+    "type": "boundary",
+    "title": "Balanced risk threshold is inclusive at 35",
+    "steps": [
+      "Enter values that produce daily per traveler exactly 35",
+      "Submit the planner form"
+    ],
+    "expectedResult": "The risk level is Balanced."
+  },
+  {
+    "id": "TC-012",
+    "type": "boundary",
+    "title": "Maximum valid values compute successfully",
+    "steps": [
+      "Enter maximum valid values",
+      "Submit the planner form"
+    ],
+    "expectedResult": "The plan renders without validation errors and the totals display correctly."
+  },
+  {
+    "id": "TC-013",
+    "type": "positive",
+    "title": "Clear all removes persisted trips from history",
+    "steps": [
+      "Save one or more trips",
+      "Open the History page",
+      "Click Clear All Trips"
+    ],
+    "expectedResult": "The history list is emptied and the empty-state message is shown."
+  },
+  {
+    "id": "TC-014",
+    "type": "positive",
+    "title": "Insights page returns to empty state after clearing trips",
+    "steps": [
+      "Clear all trips",
+      "Open the Insights page"
+    ],
+    "expectedResult": "The insights page shows zeroed stats or an empty-state message."
+  },
+  {
+    "id": "TC-015",
+    "type": "regression",
+    "title": "Save still persists if the user navigates away immediately",
+    "steps": [
+      "Generate a valid trip plan",
+      "Click Save Trip",
+      "Navigate to History immediately"
+    ],
+    "expectedResult": "The trip is still saved and appears in history even if the page changes quickly."
+  },
+  {
+    "id": "TC-016",
+    "type": "smoke",
+    "title": "Compare page shows saved trips and best-value spotlight",
+    "steps": [
+      "Save multiple trips",
+      "Open the Compare page"
+    ],
+    "expectedResult": "The compare page renders saved trips in a table and highlights the best-value trip."
+  }
+]
