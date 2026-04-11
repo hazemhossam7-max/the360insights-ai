@@ -5,7 +5,7 @@ pr:
 - main
 
 pool:
-  vmImage: ubuntu-latest
+  name: "SelfHosted agent test"
 
 variables:
   CI: "true"
@@ -23,7 +23,7 @@ steps:
 - script: npm ci
   displayName: "Install dependencies"
 
-- script: npx playwright install --with-deps chromium
+- script: npx playwright install chromium
   displayName: "Install Playwright browser"
 
 - script: npm run test:e2e
@@ -53,4 +53,3 @@ steps:
     targetPath: "test-results"
     artifact: "test-results"
     publishLocation: "pipeline"
-
