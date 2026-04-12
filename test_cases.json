@@ -136,7 +136,9 @@
     "type": "positive",
     "title": "Insights page returns to empty state after clearing trips",
     "steps": [
-      "Clear all trips",
+      "Save one or more trips",
+      "Open the History page",
+      "Click Clear All Trips",
       "Open the Insights page"
     ],
     "expectedResult": "The insights page shows zeroed stats or an empty-state message."

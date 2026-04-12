@@ -11,6 +11,14 @@ test.describe("Planner flows", () => {
     await clearTrips(request, baseURL);
   });
 
+  test("app bootstrap script is served", async ({ request, baseURL }) => {
+    const response = await request.get(`${baseURL}/app.js`);
+
+    expect(response.ok()).toBeTruthy();
+    const body = await response.text();
+    expect(body).toContain("planner.js");
+  });
+
   test("TC-001: home page loads with planner and navigation", async ({ page, baseURL }) => {
     await page.goto(baseURL, { waitUntil: "domcontentloaded" });
 
@@ -108,4 +116,3 @@ test.describe("Planner flows", () => {
     await expect(page.locator("#risk-level-value")).toHaveText("Comfortable");
   });
 });
-

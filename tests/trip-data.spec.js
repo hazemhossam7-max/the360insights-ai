@@ -49,6 +49,13 @@ test.describe("History, insights, and compare flows", () => {
   });
 
   test("TC-014: insights page returns to empty state after clearing trips", async ({ page, baseURL }) => {
+    await saveTripThroughUi(page, sampleTrips.balanced, baseURL);
+    await page.goto(`${baseURL}/history`, { waitUntil: "domcontentloaded" });
+    await page.click("#clear-trips-button");
+
+    await expect(page.locator("#history-empty-state")).toHaveText(
+      "No saved trips yet. Save a plan from the Planner page."
+    );
     await page.goto(`${baseURL}/insights`, { waitUntil: "domcontentloaded" });
 
     await expect(page.locator("#insights-empty-state")).toBeVisible();
@@ -71,4 +78,3 @@ test.describe("History, insights, and compare flows", () => {
     await expect(page.locator("#compare-table-body")).toContainText("Mini Trip");
   });
 });
-

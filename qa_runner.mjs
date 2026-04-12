@@ -232,6 +232,11 @@ async function runTestCase(testCase) {
     }
     case "TC-014": {
       await clearTrips();
+      await saveTripThroughUi(sampleTrips.balanced);
+      await page.goto(`${baseUrl}/history`, { waitUntil: "domcontentloaded" });
+      await page.click("#clear-trips-button");
+      await page.waitForTimeout(150);
+      await expect(await page.locator("#history-empty-state").isVisible(), "Empty state should show after clear.");
       await page.goto(`${baseUrl}/insights`, { waitUntil: "domcontentloaded" });
       await expect(await page.locator("#insights-empty-state").isVisible(), "Insights empty state should appear with no trips.");
       break;

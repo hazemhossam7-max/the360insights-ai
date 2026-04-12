@@ -195,6 +195,7 @@ function routeStatic(req, res) {
     "/compare": "compare.html",
     "/compare.html": "compare.html",
     "/styles.css": "styles.css",
+    "/app.js": "app.js",
     "/planner.js": "planner.js",
     "/history.js": "history.js",
     "/insights.js": "insights.js",
