@@ -59,14 +59,34 @@ async function planTrip(page, values, baseURL) {
 
 async function saveTripThroughUi(page, values, baseURL) {
   await planTrip(page, values, baseURL);
+  const saveResponsePromise = page.waitForResponse(
+    (response) =>
+      response.request().method() === "POST" &&
+      response.url().endsWith("/api/trips"),
+    { timeout: 10_000 }
+  );
   await page.click("#save-button");
-  await page.waitForTimeout(250);
+  const saveResponse = await saveResponsePromise;
+
+  if (saveResponse.status() !== 201) {
+    throw new Error(`Expected save request to succeed, got ${saveResponse.status()}.`);
+  }
 }
 
 async function saveTripAndNavigateImmediately(page, values, destinationPath, baseURL) {
   await planTrip(page, values, baseURL);
   await page.click("#save-button");
   await page.goto(`${baseURL}${destinationPath}`, { waitUntil: "domcontentloaded" });
+  await page.waitForFunction(
+    async (expectedTripName) => {
+      const response = await fetch("/api/trips");
+      const payload = await response.json();
+      return payload.trips.some((trip) => trip.tripName === expectedTripName);
+    },
+    values.tripName,
+    { timeout: 10_000 }
+  );
+  await page.reload({ waitUntil: "domcontentloaded" });
 }
 
 module.exports = {
@@ -78,4 +98,3 @@ module.exports = {
   saveTripThroughUi,
   saveTripAndNavigateImmediately,
 };
-
