@@ -5,7 +5,7 @@ pr:
 - main
 
 pool:
-  name: "SelfHosted agent test"
+  name: "Default"
 
 variables:
   CI: "true"
