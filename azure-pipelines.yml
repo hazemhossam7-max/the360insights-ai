@@ -23,8 +23,8 @@ steps:
 - script: npm ci
   displayName: "Install dependencies"
 
-- script: npx playwright install chromium
-  displayName: "Install Playwright browser"
+- script: npx playwright install --with-deps chromium
+  displayName: "Install Playwright browser and dependencies"
 
 - script: npm run test:e2e
   displayName: "Run Playwright end-to-end tests"
