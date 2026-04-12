@@ -2,6 +2,7 @@ const { test, expect } = require("playwright/test");
 const {
   sampleTrips,
   clearTrips,
+  seedTrips,
   saveTripThroughUi,
   saveTripAndNavigateImmediately,
 } = require("./helpers");
@@ -19,9 +20,8 @@ test.describe("History, insights, and compare flows", () => {
     await expect(page.locator("#history-list")).toContainText("Cairo, Egypt");
   });
 
-  test("TC-004: history filter shows only matching styles", async ({ page, baseURL }) => {
-    await saveTripThroughUi(page, sampleTrips.balanced, baseURL);
-    await saveTripThroughUi(page, sampleTrips.comfort, baseURL);
+  test("TC-004: history filter shows only matching styles", async ({ page, request, baseURL }) => {
+    await seedTrips(request, baseURL, [sampleTrips.balanced, sampleTrips.comfort]);
     await page.goto(`${baseURL}/history`, { waitUntil: "domcontentloaded" });
     await page.selectOption("#style-filter", "Comfort");
 
@@ -29,9 +29,8 @@ test.describe("History, insights, and compare flows", () => {
     await expect(page.locator("#history-list")).not.toContainText("Cairo Escape");
   });
 
-  test("TC-005: insights page shows aggregate stats from saved data", async ({ page, baseURL }) => {
-    await saveTripThroughUi(page, sampleTrips.balanced, baseURL);
-    await saveTripThroughUi(page, sampleTrips.comfort, baseURL);
+  test("TC-005: insights page shows aggregate stats from saved data", async ({ page, request, baseURL }) => {
+    await seedTrips(request, baseURL, [sampleTrips.balanced, sampleTrips.comfort]);
     await page.goto(`${baseURL}/insights`, { waitUntil: "domcontentloaded" });
 
     await expect(page.locator("#stat-total-trips")).toHaveText("2");
@@ -40,16 +39,16 @@ test.describe("History, insights, and compare flows", () => {
     await expect(page.locator("#stat-most-common-style")).toHaveText("Balanced");
   });
 
-  test("TC-013: clear all removes persisted trips from history", async ({ page, baseURL }) => {
-    await saveTripThroughUi(page, sampleTrips.balanced, baseURL);
+  test("TC-013: clear all removes persisted trips from history", async ({ page, request, baseURL }) => {
+    await seedTrips(request, baseURL, [sampleTrips.balanced]);
     await page.goto(`${baseURL}/history`, { waitUntil: "domcontentloaded" });
     await page.click("#clear-trips-button");
 
     await expect(page.locator("#history-empty-state")).toBeVisible();
   });
 
-  test("TC-014: insights page returns to empty state after clearing trips", async ({ page, baseURL }) => {
-    await saveTripThroughUi(page, sampleTrips.balanced, baseURL);
+  test("TC-014: insights page returns to empty state after clearing trips", async ({ page, request, baseURL }) => {
+    await seedTrips(request, baseURL, [sampleTrips.balanced]);
     await page.goto(`${baseURL}/history`, { waitUntil: "domcontentloaded" });
     await page.click("#clear-trips-button");
 
@@ -67,9 +66,8 @@ test.describe("History, insights, and compare flows", () => {
     await expect(page.locator("#history-list")).toContainText("Cairo Escape");
   });
 
-  test("TC-016: compare page shows saved trips and best-value spotlight", async ({ page, baseURL }) => {
-    await saveTripThroughUi(page, sampleTrips.balanced, baseURL);
-    await saveTripThroughUi(page, sampleTrips.shoestring, baseURL);
+  test("TC-016: compare page shows saved trips and best-value spotlight", async ({ page, request, baseURL }) => {
+    await seedTrips(request, baseURL, [sampleTrips.balanced, sampleTrips.shoestring]);
     await page.goto(`${baseURL}/compare`, { waitUntil: "domcontentloaded" });
 
     await expect(page.locator("#compare-best-value")).toHaveText("Mini Trip");

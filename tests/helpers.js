@@ -41,6 +41,16 @@ async function postTrip(request, baseURL, trip) {
   });
 }
 
+async function seedTrips(request, baseURL, trips) {
+  for (const trip of trips) {
+    const response = await postTrip(request, baseURL, trip);
+    if (!response.ok()) {
+      const payload = await response.text();
+      throw new Error(`Failed to seed trip data. Status: ${response.status()}. Body: ${payload}`);
+    }
+  }
+}
+
 async function fillPlanner(page, values, baseURL) {
   await page.goto(baseURL, { waitUntil: "domcontentloaded" });
   await page.fill("#tripName", values.tripName ?? "");
@@ -93,6 +103,7 @@ module.exports = {
   sampleTrips,
   clearTrips,
   postTrip,
+  seedTrips,
   fillPlanner,
   planTrip,
   saveTripThroughUi,
