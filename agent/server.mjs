@@ -6,6 +6,14 @@ import { createTestPlansClient } from "./testplans-client.mjs";
 const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || "0.0.0.0";
 
+process.on("unhandledRejection", (error) => {
+  console.error(`[process] unhandled rejection: ${error?.stack || error?.message || error}`);
+});
+
+process.on("uncaughtException", (error) => {
+  console.error(`[process] uncaught exception: ${error?.stack || error?.message || error}`);
+});
+
 function readEnv(...keys) {
   for (const key of keys) {
     const value = process.env[key];
@@ -278,8 +286,10 @@ async function handleWebhook(req, res) {
       workItemId,
     });
 
-    void processWebhook(payload, workItemId, client, config).catch((error) => {
-      console.error(`[webhook] background processing failed: ${error.stack || error.message}`);
+    setImmediate(() => {
+      void processWebhook(payload, workItemId, client, config).catch((error) => {
+        console.error(`[webhook] background processing failed: ${error.stack || error.message}`);
+      });
     });
   } catch (error) {
     console.error(`[webhook] processing failed: ${error.stack || error.message}`);
