@@ -198,6 +198,8 @@ function parsePositiveInteger(value) {
 async function uploadGeneratedTests(config, testCaseDrafts) {
   const planId = parsePositiveInteger(config.testPlanId);
   const suiteId = parsePositiveInteger(config.testSuiteId);
+  const testPlanLabel =
+    String(testCaseDrafts?.websiteTitle || testCaseDrafts?.storyTitle || "Generated Test Cases").trim();
 
   if (!planId || !suiteId) {
     return {
@@ -214,16 +216,38 @@ async function uploadGeneratedTests(config, testCaseDrafts) {
     createdCases.push(created);
   }
 
-  const added = await client.addTestCasesToSuite({
-    planId,
-    suiteId,
-    testCaseIds: createdCases.map((item) => item.id),
-  });
+  let added;
+  let targetSuiteId = suiteId;
+
+  try {
+    added = await client.addTestCasesToSuite({
+      planId,
+      suiteId,
+      testCaseIds: createdCases.map((item) => item.id),
+    });
+  } catch (error) {
+    const suiteLinkLimitHit = /TF237201|1000 link limit/i.test(String(error?.message || ""));
+    if (!suiteLinkLimitHit) {
+      throw error;
+    }
+
+    const fallbackSuiteName = `${testPlanLabel.slice(0, 80)} (${new Date().toISOString().slice(0, 10)})`;
+    console.warn(
+      `[webhook] suite ${suiteId} hit the link limit, creating a new suite named "${fallbackSuiteName}"`
+    );
+    const createdSuite = await client.createTestSuite({ planId, name: fallbackSuiteName });
+    targetSuiteId = createdSuite.id;
+    added = await client.addTestCasesToSuite({
+      planId,
+      suiteId: targetSuiteId,
+      testCaseIds: createdCases.map((item) => item.id),
+    });
+  }
 
   return {
     skipped: false,
     planId,
-    suiteId,
+    suiteId: targetSuiteId,
     createdCases,
     added,
   };

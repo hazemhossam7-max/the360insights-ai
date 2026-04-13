@@ -74,6 +74,27 @@ export function createTestPlansClient(config) {
   }
 
   return {
+    async createTestSuite({ planId, name }) {
+      const url = new URL(
+        `${orgUrl}/${encodeURIComponent(project)}/_apis/testplan/Plans/${encodeURIComponent(planId)}/suites`
+      );
+      url.searchParams.set("api-version", "7.1");
+
+      const created = await requestJson(url.toString(), {
+        method: "POST",
+        body: JSON.stringify({
+          name,
+          suiteType: "staticTestSuite",
+        }),
+      });
+
+      return {
+        id: Number(created.id),
+        name: created.name || name,
+        suiteType: created.suiteType || "staticTestSuite",
+      };
+    },
+
     async createTestCaseWorkItem(testCaseDraft) {
       const url = new URL(
         `${orgUrl}/${encodeURIComponent(project)}/_apis/wit/workitems/${workItemTypePath("Test Case")}`
