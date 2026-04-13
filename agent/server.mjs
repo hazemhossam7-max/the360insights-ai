@@ -129,6 +129,10 @@ function buildStoryFromWebhookPayload(payload, workItemId) {
 
 function getConfig() {
   const config = {
+    aiProvider: readEnv("AI_PROVIDER", "ai.provider"),
+    geminiApiKey: readEnv("GEMINI_API_KEY", "gemini.key"),
+    geminiModel: readEnv("GEMINI_MODEL", "gemini.model"),
+    geminiBaseUrl: readEnv("GEMINI_BASE_URL", "gemini.base.url"),
     orgUrl: readEnv("AZDO_ORG_URL", "azdo.org.url"),
     project: readEnv("AZDO_PROJECT", "azdo.project"),
     pat: readEnv("AZDO_PAT", "azdo.pat"),
@@ -145,6 +149,10 @@ function getConfig() {
 
 function summarizeConfig(config) {
   return {
+    aiProvider: config.aiProvider || null,
+    geminiApiKeyPresent: Boolean(config.geminiApiKey),
+    geminiModel: config.geminiModel || null,
+    geminiBaseUrlPresent: Boolean(config.geminiBaseUrl),
     orgUrlPresent: Boolean(config.orgUrl),
     projectPresent: Boolean(config.project),
     patPresent: Boolean(config.pat),
@@ -287,14 +295,26 @@ async function processWebhook(payload, workItemId, client, config) {
   }
 
   console.log(`[webhook] processing work item: ${workItem.id} - ${workItem.title}`);
-  console.log(
-    `[webhook] generating test cases with OpenAI model ${config.openAiModel || "gpt-4o-mini"}`
-  );
+  const aiProvider =
+    String(config.aiProvider || "").trim().toLowerCase() === "openai"
+      ? "OpenAI"
+      : String(config.aiProvider || "").trim().toLowerCase() === "gemini" || config.geminiApiKey
+        ? "Gemini"
+        : "OpenAI";
+  const aiModel =
+    aiProvider === "Gemini"
+      ? config.geminiModel || "gemini-2.5-flash"
+      : config.openAiModel || "gpt-4o-mini";
+  console.log(`[webhook] generating test cases with ${aiProvider} model ${aiModel}`);
 
   const testCaseDrafts = await generateTestCasesForStory(workItem, {
+    provider: config.aiProvider,
     apiKey: config.openAiApiKey,
     model: config.openAiModel,
     baseUrl: config.openAiBaseUrl,
+    geminiApiKey: config.geminiApiKey,
+    geminiModel: config.geminiModel,
+    geminiBaseUrl: config.geminiBaseUrl,
     allowHeuristicFallback: config.allowHeuristicFallback,
   });
 
@@ -323,10 +343,14 @@ async function processWebsiteUrl(url, config) {
   );
 
   const testCaseDrafts = await generateTestCasesForWebsite(websiteBrief, {
+    provider: config.aiProvider,
     apiKey: config.openAiApiKey,
     model: config.openAiModel,
     baseUrl: config.openAiBaseUrl,
-    allowHeuristicFallback: true,
+    geminiApiKey: config.geminiApiKey,
+    geminiModel: config.geminiModel,
+    geminiBaseUrl: config.geminiBaseUrl,
+    allowHeuristicFallback: config.allowHeuristicFallback,
   });
 
   console.log(

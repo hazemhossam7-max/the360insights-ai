@@ -1,4 +1,5 @@
 import { createOpenAIClient } from "./openai-client.mjs";
+import { createGeminiClient } from "./gemini-client.mjs";
 import { generateTestCaseDrafts as generateHeuristicTestCaseDrafts } from "./story-to-tests.mjs";
 
 function normalizeCase(item, index) {
@@ -39,7 +40,22 @@ function normalizeOpenAIResult(story, result) {
   };
 }
 
-function normalizeWebsiteResult(websiteBrief, result) {
+function normalizeGeminiResult(story, result) {
+  const summary = String(result?.summary || story?.description || "").trim();
+  const testCases = (result?.testCases || []).map(normalizeCase);
+
+  return {
+    storyId: story?.id ?? null,
+    storyTitle: String(result?.storyTitle || story?.title || "").trim(),
+    summary,
+    generationSource: "gemini",
+    model: result?.model || null,
+    generatedAt: new Date().toISOString(),
+    testCases,
+  };
+}
+
+function normalizeWebsiteResult(websiteBrief, result, source) {
   const summary = String(result?.summary || websiteBrief?.summary || "").trim();
   const testCases = (result?.testCases || []).map(normalizeCase);
 
@@ -47,50 +63,61 @@ function normalizeWebsiteResult(websiteBrief, result) {
     websiteUrl: String(websiteBrief?.url || "").trim(),
     websiteTitle: String(result?.storyTitle || websiteBrief?.title || "").trim(),
     summary,
-    generationSource: "openai",
+    generationSource: source,
     model: result?.model || null,
     generatedAt: new Date().toISOString(),
     testCases,
   };
 }
 
-async function generateWithOpenAI(content, options, kind, fallbackFactory) {
-  const apiKey = String(options.apiKey || process.env.OPENAI_API_KEY || "").trim();
-  const allowHeuristicFallback = String(
-    options.allowHeuristicFallback ?? process.env.ALLOW_HEURISTIC_FALLBACK ?? ""
-  )
-    .trim()
-    .toLowerCase();
-  const heuristicFallbackEnabled =
-    allowHeuristicFallback === "1" ||
-    allowHeuristicFallback === "true" ||
-    allowHeuristicFallback === "yes" ||
-    allowHeuristicFallback === "on";
+function isTruthyFlag(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  return normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "on";
+}
 
-  const fallback = fallbackFactory();
-
-  if (!apiKey) {
-    if (heuristicFallbackEnabled) {
-      return {
-        ...fallback,
-        generationSource: "heuristic",
-        model: null,
-        generationNotes: "OPENAI_API_KEY was not set.",
-      };
-    }
-
-    throw new Error("OPENAI_API_KEY is required for AI generation.");
+function resolveAiProvider(options) {
+  const explicit = String(options.provider || process.env.AI_PROVIDER || "").trim().toLowerCase();
+  if (explicit === "gemini" || explicit === "openai") {
+    return explicit;
   }
 
+  if (String(options.geminiApiKey || process.env.GEMINI_API_KEY || "").trim()) {
+    return "gemini";
+  }
+
+  return "openai";
+}
+
+async function generateWithModel(content, options, kind, fallbackFactory) {
+  const provider = resolveAiProvider(options);
+  const heuristicFallbackEnabled = isTruthyFlag(
+    options.allowHeuristicFallback ?? process.env.ALLOW_HEURISTIC_FALLBACK ?? ""
+  );
+  const fallback = fallbackFactory();
+
   try {
-    const client = createOpenAIClient({
-      apiKey,
-      model: options.model || process.env.OPENAI_MODEL || "gpt-4o-mini",
-      baseUrl: options.baseUrl || process.env.OPENAI_BASE_URL,
-    });
+    const client =
+      provider === "gemini"
+        ? createGeminiClient({
+            apiKey: options.geminiApiKey || process.env.GEMINI_API_KEY,
+            model: options.geminiModel || process.env.GEMINI_MODEL || "gemini-2.5-flash",
+            baseUrl: options.geminiBaseUrl || process.env.GEMINI_BASE_URL,
+          })
+        : createOpenAIClient({
+            apiKey: options.apiKey || process.env.OPENAI_API_KEY,
+            model: options.model || process.env.OPENAI_MODEL || "gpt-4o-mini",
+            baseUrl: options.baseUrl || process.env.OPENAI_BASE_URL,
+          });
+
     const result = await client.createResponse({ kind, content });
+    if (provider === "gemini") {
+      return kind === "website"
+        ? normalizeWebsiteResult(content, result, "gemini")
+        : normalizeGeminiResult(content, result);
+    }
+
     return kind === "website"
-      ? normalizeWebsiteResult(content, result)
+      ? normalizeWebsiteResult(content, result, "openai")
       : normalizeOpenAIResult(content, result);
   } catch (error) {
     if (heuristicFallbackEnabled) {
@@ -102,16 +129,17 @@ async function generateWithOpenAI(content, options, kind, fallbackFactory) {
       };
     }
 
-    throw new Error(`OpenAI generation failed: ${error.message}`);
+    const providerLabel = provider === "gemini" ? "Gemini" : "OpenAI";
+    throw new Error(`${providerLabel} generation failed: ${error.message}`);
   }
 }
 
 export async function generateTestCasesForStory(story, options = {}) {
-  return generateWithOpenAI(story, options, "story", () => generateHeuristicTestCaseDrafts(story));
+  return generateWithModel(story, options, "story", () => generateHeuristicTestCaseDrafts(story));
 }
 
 export async function generateTestCasesForWebsite(websiteBrief, options = {}) {
-  return generateWithOpenAI(
+  return generateWithModel(
     websiteBrief,
     options,
     "website",

@@ -18,15 +18,20 @@ npm start
 - `AZDO_ORG_URL` - for example `https://dev.azure.com/your-org`
 - `AZDO_PROJECT` - for example `trip-budget-planner`
 - `AZDO_PAT` - a token with permission to read work items
-- `OPENAI_API_KEY` - required for AI-based test generation
+- `GEMINI_API_KEY` - preferred, required for AI-based test generation when using Gemini
+- `GEMINI_MODEL` - optional, defaults to `gemini-2.5-flash`
+- `GEMINI_BASE_URL` - optional, defaults to `https://generativelanguage.googleapis.com/v1beta`
+- `OPENAI_API_KEY` - still supported for compatibility if you want to keep using OpenAI
 - `OPENAI_MODEL` - optional, defaults to `gpt-4o-mini`
 - `OPENAI_BASE_URL` - optional, defaults to `https://api.openai.com`
+- `AI_PROVIDER` - optional, set to `gemini` or `openai` to force a provider
 - `AZDO_TEST_PLAN_ID` - optional, enables Test Plans upload
 - `AZDO_TEST_SUITE_ID` - optional, enables Test Plans upload
 - `PORT` - optional, defaults to `3000`
 - `ALLOW_HEURISTIC_FALLBACK` - optional, set to `true` only if you want the rule-based fallback generator
 
-By default, the agent uses OpenAI for test generation and will fail if the API key or request fails.
+By default, the agent uses Gemini if `GEMINI_API_KEY` is present, otherwise it falls back to OpenAI when `OPENAI_API_KEY` is present.
+Set `AI_PROVIDER=gemini` if you want to force Gemini even when OpenAI variables are also present.
 Set `ALLOW_HEURISTIC_FALLBACK=true` only if you want to keep the older rule-based fallback as a backup.
 
 If your Azure App Service already has the legacy lowercase keys from earlier setup
@@ -42,7 +47,7 @@ agent will read those too.
 - `GET /inspect-url?url=https://example.com`
 - `POST /inspect-url`
 
-`/inspect-url` crawls the given website URL, summarizes visible pages and feature candidates, generates test cases with OpenAI, and uploads them to Azure Test Plans if plan and suite IDs are configured.
+`/inspect-url` crawls the given website URL, summarizes visible pages and feature candidates, generates test cases with the selected AI provider, and uploads them to Azure Test Plans if plan and suite IDs are configured.
 
 ## Webhook URL
 
