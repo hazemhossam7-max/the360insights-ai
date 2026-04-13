@@ -97,10 +97,12 @@ async function uploadGeneratedTests(config, testCaseDrafts) {
 }
 
 async function handleWebhook(req, res) {
+  console.log(`[webhook] ${new Date().toISOString()} received request`);
   let payload;
   try {
     payload = await readJsonBody(req);
   } catch (error) {
+    console.error(`[webhook] invalid payload: ${error.message}`);
     sendJson(res, 400, { ok: false, error: error.message });
     return;
   }
@@ -109,12 +111,14 @@ async function handleWebhook(req, res) {
   try {
     client = createAzureDevOpsClient(getConfig());
   } catch (error) {
+    console.error(`[webhook] config error: ${error.message}`);
     sendJson(res, 500, { ok: false, error: error.message });
     return;
   }
 
   const workItemId = resolveWorkItemId(payload);
   if (!workItemId) {
+    console.error("[webhook] could not resolve work item id from payload");
     sendJson(res, 400, {
       ok: false,
       error: "Could not determine the Azure DevOps work item id from the webhook payload.",
@@ -123,9 +127,21 @@ async function handleWebhook(req, res) {
   }
 
   try {
+    console.log(`[webhook] resolved work item id: ${workItemId}`);
     const workItem = await client.getWorkItem(workItemId);
+    console.log(`[webhook] fetched work item: ${workItem.id} - ${workItem.title}`);
     const testCaseDrafts = await generateTestCasesForStory(workItem);
+    console.log(
+      `[webhook] generated ${testCaseDrafts.testCases.length} test case(s) using ${testCaseDrafts.generationSource}`
+    );
     const uploadResult = await uploadGeneratedTests(getConfig(), testCaseDrafts);
+    if (uploadResult?.skipped) {
+      console.log(`[webhook] upload skipped: ${uploadResult.reason}`);
+    } else {
+      console.log(
+        `[webhook] uploaded ${uploadResult.createdCases.length} test case(s) to plan ${uploadResult.planId}, suite ${uploadResult.suiteId}`
+      );
+    }
 
     sendJson(res, 200, {
       ok: true,
