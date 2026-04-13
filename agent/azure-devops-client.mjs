@@ -25,6 +25,7 @@ function normalizeFields(fields = {}) {
     title: String(fields["System.Title"] || "").trim(),
     description: String(fields["System.Description"] || "").trim(),
     acceptanceCriteria: String(acceptanceCriteria || "").trim(),
+    type: String(fields["System.WorkItemType"] || "").trim(),
     tags,
     state: String(fields["System.State"] || "").trim(),
     areaPath: String(fields["System.AreaPath"] || "").trim(),

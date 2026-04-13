@@ -117,6 +117,7 @@ function buildStoryFromWebhookPayload(payload, workItemId) {
     description: descriptionFromFields || detailedText || titleFromMessage || "",
     acceptanceCriteria:
       acceptanceCriteriaFromFields || descriptionFromFields || detailedText || titleFromMessage || "",
+    type: String(fields["System.WorkItemType"] || "").trim(),
     tags: parseTags(fields["System.Tags"]),
     state: String(fields["System.State"] || "").trim(),
     areaPath: String(fields["System.AreaPath"] || "").trim(),
@@ -156,6 +157,21 @@ function summarizeConfig(config) {
     orgUrl: config.orgUrl || null,
     project: config.project || null,
   };
+}
+
+function isProcessableStoryType(type) {
+  const normalized = String(type || "").trim().toLowerCase();
+  if (!normalized) {
+    return true;
+  }
+
+  return [
+    "issue",
+    "user story",
+    "product backlog item",
+    "bug",
+    "requirement",
+  ].includes(normalized);
 }
 
 function parsePositiveInteger(value) {
@@ -220,6 +236,13 @@ async function processWebhook(payload, workItemId, client, config) {
 
   if (!workItem?.title) {
     workItem = buildStoryFromWebhookPayload(payload, workItemId);
+  }
+
+  if (!isProcessableStoryType(workItem?.type)) {
+    console.log(
+      `[webhook] skipping work item ${workItem.id} because type "${workItem.type || "unknown"}" is not a story type`
+    );
+    return { skipped: true, reason: `Unsupported work item type: ${workItem.type || "unknown"}` };
   }
 
   console.log(`[webhook] processing work item: ${workItem.id} - ${workItem.title}`);
