@@ -298,7 +298,7 @@ async function processWebsiteUrl(url, config) {
     apiKey: config.openAiApiKey,
     model: config.openAiModel,
     baseUrl: config.openAiBaseUrl,
-    allowHeuristicFallback: config.allowHeuristicFallback,
+    allowHeuristicFallback: true,
   });
 
   console.log(
