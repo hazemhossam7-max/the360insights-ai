@@ -223,6 +223,9 @@ async function processWebhook(payload, workItemId, client, config) {
   }
 
   console.log(`[webhook] processing work item: ${workItem.id} - ${workItem.title}`);
+  console.log(
+    `[webhook] generating test cases with OpenAI model ${config.openAiModel || "gpt-4o-mini"}`
+  );
 
   const testCaseDrafts = await generateTestCasesForStory(workItem, {
     apiKey: config.openAiApiKey,
