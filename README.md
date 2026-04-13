@@ -180,6 +180,31 @@ The QA runner:
 - captures screenshots and markdown bug reports on failure
 - writes a JSON summary to `bug_reports/latest_report.json`
 
+## Azure DevOps Agent
+
+The repo also includes a separate webhook agent in [`agent/`](./agent/).
+
+That service:
+
+- receives Azure DevOps service-hook events
+- fetches the full User Story from Azure DevOps
+- generates draft test cases from the story text
+
+To run it locally:
+
+```bash
+npm run agent:serve
+```
+
+The agent expects these environment variables:
+
+- `AZDO_ORG_URL`
+- `AZDO_PROJECT`
+- `AZDO_PAT`
+- `OPENAI_API_KEY` for AI-driven test generation
+- `OPENAI_MODEL` and `OPENAI_BASE_URL` if you want to override the defaults
+- `AZDO_TEST_PLAN_ID` and `AZDO_TEST_SUITE_ID` if you want the agent to upload test cases into Azure Test Plans
+
 ## API Endpoints
 
 - `GET /api/trips`

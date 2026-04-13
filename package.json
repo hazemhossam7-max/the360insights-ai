@@ -5,6 +5,7 @@
   "description": "Multi-page trip budget planner with backend persistence and browser QA automation.",
   "scripts": {
     "serve": "node server.js",
+    "agent:serve": "node agent/server.mjs",
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",
     "test:e2e:legacy": "node qa_runner.mjs"
