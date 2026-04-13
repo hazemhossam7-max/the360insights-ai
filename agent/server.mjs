@@ -55,7 +55,7 @@ function readJsonBody(req, maxBytes = 1024 * 1024) {
 }
 
 function getConfig() {
-  return {
+  const config = {
     orgUrl: readEnv("AZDO_ORG_URL", "azdo.org.url"),
     project: readEnv("AZDO_PROJECT", "azdo.project"),
     pat: readEnv("AZDO_PAT", "azdo.pat"),
@@ -64,6 +64,24 @@ function getConfig() {
     openAiApiKey: readEnv("OPENAI_API_KEY", "openai.key"),
     openAiModel: readEnv("OPENAI_MODEL", "openai.model"),
     openAiBaseUrl: readEnv("OPENAI_BASE_URL", "openai.base.url"),
+  };
+
+  return config;
+}
+
+function summarizeConfig(config) {
+  return {
+    orgUrlPresent: Boolean(config.orgUrl),
+    projectPresent: Boolean(config.project),
+    patPresent: Boolean(config.pat),
+    testPlanIdPresent: Boolean(config.testPlanId),
+    testSuiteIdPresent: Boolean(config.testSuiteId),
+    openAiApiKeyPresent: Boolean(config.openAiApiKey),
+    openAiModel: config.openAiModel || null,
+    openAiBaseUrlPresent: Boolean(config.openAiBaseUrl),
+    patLength: config.pat ? String(config.pat).length : 0,
+    orgUrl: config.orgUrl || null,
+    project: config.project || null,
   };
 }
 
@@ -122,7 +140,9 @@ async function handleWebhook(req, res) {
 
   let client;
   try {
-    client = createAzureDevOpsClient(getConfig());
+    const config = getConfig();
+    console.log(`[webhook] config summary: ${JSON.stringify(summarizeConfig(config))}`);
+    client = createAzureDevOpsClient(config);
   } catch (error) {
     console.error(`[webhook] config error: ${error.message}`);
     sendJson(res, 500, { ok: false, error: error.message });
