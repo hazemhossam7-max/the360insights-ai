@@ -151,6 +151,7 @@ async function handleWebhook(req, res) {
       uploadResult,
     });
   } catch (error) {
+    console.error(`[webhook] processing failed: ${error.stack || error.message}`);
     sendJson(res, 502, { ok: false, error: error.message });
   }
 }
