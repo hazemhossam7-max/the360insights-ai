@@ -235,7 +235,11 @@ async function uploadGeneratedTests(config, testCaseDrafts) {
     console.warn(
       `[webhook] suite ${suiteId} hit the link limit, creating a new suite named "${fallbackSuiteName}"`
     );
-    const createdSuite = await client.createTestSuite({ planId, name: fallbackSuiteName });
+    const createdSuite = await client.createTestSuite({
+      planId,
+      parentSuiteId: suiteId,
+      name: fallbackSuiteName,
+    });
     targetSuiteId = createdSuite.id;
     added = await client.addTestCasesToSuite({
       planId,
