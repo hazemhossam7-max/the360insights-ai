@@ -190,6 +190,53 @@ async function uploadGeneratedTests(config, testCaseDrafts) {
   };
 }
 
+async function processWebhook(payload, workItemId, client, config) {
+  console.log(`[webhook] background processing started for work item ${workItemId}`);
+
+  let workItem;
+  try {
+    workItem = await client.getWorkItem(workItemId);
+  } catch (fetchError) {
+    const fallbackAllowed = /401|403|404/.test(String(fetchError?.message || ""));
+    if (!fallbackAllowed) {
+      throw fetchError;
+    }
+
+    workItem = buildStoryFromWebhookPayload(payload, workItemId);
+    console.warn(
+      `[webhook] Azure DevOps read failed, using webhook payload fallback for work item ${workItemId}: ${fetchError.message}`
+    );
+  }
+
+  if (!workItem?.title) {
+    workItem = buildStoryFromWebhookPayload(payload, workItemId);
+  }
+
+  console.log(`[webhook] processing work item: ${workItem.id} - ${workItem.title}`);
+
+  const testCaseDrafts = await generateTestCasesForStory(workItem, {
+    apiKey: config.openAiApiKey,
+    model: config.openAiModel,
+    baseUrl: config.openAiBaseUrl,
+  });
+
+  console.log(
+    `[webhook] generated ${testCaseDrafts.testCases.length} test case(s) using ${testCaseDrafts.generationSource}`
+  );
+
+  const uploadResult = await uploadGeneratedTests(config, testCaseDrafts);
+  if (uploadResult?.skipped) {
+    console.log(`[webhook] upload skipped: ${uploadResult.reason}`);
+  } else {
+    console.log(
+      `[webhook] uploaded ${uploadResult.createdCases.length} test case(s) to plan ${uploadResult.planId}, suite ${uploadResult.suiteId}`
+    );
+  }
+
+  console.log(`[webhook] background processing finished for work item ${workItemId}`);
+  return { workItem, testCaseDrafts, uploadResult };
+}
+
 async function handleWebhook(req, res) {
   console.log(`[webhook] ${new Date().toISOString()} received request`);
   let payload;
@@ -224,50 +271,15 @@ async function handleWebhook(req, res) {
 
   try {
     console.log(`[webhook] resolved work item id: ${workItemId}`);
-    let workItem;
-    try {
-      workItem = await client.getWorkItem(workItemId);
-    } catch (fetchError) {
-      const fallbackAllowed = /401|403|404/.test(String(fetchError?.message || ""));
-      if (!fallbackAllowed) {
-        throw fetchError;
-      }
-
-      workItem = buildStoryFromWebhookPayload(payload, workItemId);
-      console.warn(
-        `[webhook] Azure DevOps read failed, using webhook payload fallback for work item ${workItemId}: ${fetchError.message}`
-      );
-    }
-
-    if (!workItem?.title) {
-      workItem = buildStoryFromWebhookPayload(payload, workItemId);
-    }
-
-    console.log(`[webhook] fetched work item: ${workItem.id} - ${workItem.title}`);
     const config = getConfig();
-    const testCaseDrafts = await generateTestCasesForStory(workItem, {
-      apiKey: config.openAiApiKey,
-      model: config.openAiModel,
-      baseUrl: config.openAiBaseUrl,
-    });
-    console.log(
-      `[webhook] generated ${testCaseDrafts.testCases.length} test case(s) using ${testCaseDrafts.generationSource}`
-    );
-    const uploadResult = await uploadGeneratedTests(getConfig(), testCaseDrafts);
-    if (uploadResult?.skipped) {
-      console.log(`[webhook] upload skipped: ${uploadResult.reason}`);
-    } else {
-      console.log(
-        `[webhook] uploaded ${uploadResult.createdCases.length} test case(s) to plan ${uploadResult.planId}, suite ${uploadResult.suiteId}`
-      );
-    }
-
     sendJson(res, 200, {
       ok: true,
-      message: "Webhook received and story processed.",
-      workItem,
-      testCaseDrafts,
-      uploadResult,
+      message: "Webhook received and queued for processing.",
+      workItemId,
+    });
+
+    void processWebhook(payload, workItemId, client, config).catch((error) => {
+      console.error(`[webhook] background processing failed: ${error.stack || error.message}`);
     });
   } catch (error) {
     console.error(`[webhook] processing failed: ${error.stack || error.message}`);
