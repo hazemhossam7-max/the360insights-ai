@@ -1,0 +1,20 @@
+name: Keep Trip Budget Agent Warm
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Ping health endpoint
+        env:
+          KEEPALIVE_URL: https://trip-budget-agent-azhyh3fxezg8cha2.westeurope-01.azurewebsites.net/health
+        run: |
+          set -e
+          echo "Pinging ${KEEPALIVE_URL}"
+          curl --fail --silent --show-error "${KEEPALIVE_URL}" > /tmp/keepalive-response.json
+          cat /tmp/keepalive-response.json

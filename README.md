@@ -205,6 +205,8 @@ The agent expects these environment variables:
 - `OPENAI_MODEL` and `OPENAI_BASE_URL` if you want to override the defaults
 - `AZDO_TEST_PLAN_ID` and `AZDO_TEST_SUITE_ID` if you want the agent to upload test cases into Azure Test Plans
 
+If your App Service is on a Free or Shared tier and `Always On` is unavailable, the repo includes a keep-alive GitHub Action in `.github/workflows/keepalive-trip-budget-agent.yml` that pings the `/health` endpoint every 15 minutes to reduce cold-start delays.
+
 ## API Endpoints
 
 - `GET /api/trips`
