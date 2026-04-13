@@ -6,6 +6,16 @@ import { createTestPlansClient } from "./testplans-client.mjs";
 const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || "0.0.0.0";
 
+function readEnv(...keys) {
+  for (const key of keys) {
+    const value = process.env[key];
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+  return "";
+}
+
 function sendJson(res, statusCode, payload) {
   res.writeHead(statusCode, { "Content-Type": "application/json; charset=utf-8" });
   res.end(JSON.stringify(payload, null, 2));
@@ -46,11 +56,14 @@ function readJsonBody(req, maxBytes = 1024 * 1024) {
 
 function getConfig() {
   return {
-    orgUrl: process.env.AZDO_ORG_URL,
-    project: process.env.AZDO_PROJECT,
-    pat: process.env.AZDO_PAT,
-    testPlanId: process.env.AZDO_TEST_PLAN_ID,
-    testSuiteId: process.env.AZDO_TEST_SUITE_ID,
+    orgUrl: readEnv("AZDO_ORG_URL", "azdo.org.url"),
+    project: readEnv("AZDO_PROJECT", "azdo.project"),
+    pat: readEnv("AZDO_PAT", "azdo.pat"),
+    testPlanId: readEnv("AZDO_TEST_PLAN_ID", "azdo.test.plan.id"),
+    testSuiteId: readEnv("AZDO_TEST_SUITE_ID", "azdo.test.suite.id"),
+    openAiApiKey: readEnv("OPENAI_API_KEY", "openai.key"),
+    openAiModel: readEnv("OPENAI_MODEL", "openai.model"),
+    openAiBaseUrl: readEnv("OPENAI_BASE_URL", "openai.base.url"),
   };
 }
 
@@ -130,7 +143,12 @@ async function handleWebhook(req, res) {
     console.log(`[webhook] resolved work item id: ${workItemId}`);
     const workItem = await client.getWorkItem(workItemId);
     console.log(`[webhook] fetched work item: ${workItem.id} - ${workItem.title}`);
-    const testCaseDrafts = await generateTestCasesForStory(workItem);
+    const config = getConfig();
+    const testCaseDrafts = await generateTestCasesForStory(workItem, {
+      apiKey: config.openAiApiKey,
+      model: config.openAiModel,
+      baseUrl: config.openAiBaseUrl,
+    });
     console.log(
       `[webhook] generated ${testCaseDrafts.testCases.length} test case(s) using ${testCaseDrafts.generationSource}`
     );

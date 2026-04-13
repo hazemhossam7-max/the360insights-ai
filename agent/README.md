@@ -27,6 +27,11 @@ npm start
 
 If `OPENAI_API_KEY` is not set, the agent falls back to the rule-based generator.
 
+If your Azure App Service already has the legacy lowercase keys from earlier setup
+(`azdo.org.url`, `azdo.project`, `azdo.pat`, `azdo.test.plan.id`,
+`azdo.test.suite.id`, `openai.key`, `openai.model`, `openai.base.url`), the
+agent will read those too.
+
 ## Endpoints
 
 - `GET /health`
