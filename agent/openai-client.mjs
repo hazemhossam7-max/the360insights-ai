@@ -75,18 +75,43 @@ export function createOpenAIClient(config) {
     throw new Error("OPENAI_API_KEY is required for AI generation.");
   }
 
-  async function createResponse(story) {
-    const prompt = [
-      "You are a senior QA lead.",
-      "Generate the most useful manual test cases for the Azure DevOps User Story below.",
-      "Think like a test designer: include happy path, negative, boundary, and integration coverage when relevant.",
-      "Do not write implementation details.",
-      "Use concise but complete steps.",
-      "Return only structured JSON that matches the provided schema.",
-      "",
-      "User story:",
-      JSON.stringify(story, null, 2),
-    ].join("\n");
+  function buildPrompt(request) {
+    const kind = String(request?.kind || "story").trim().toLowerCase();
+    const content = request?.content ?? request;
+    const baseInstructions =
+      Array.isArray(request?.instructions) && request.instructions.length
+        ? request.instructions.map((item) => String(item).trim()).filter(Boolean)
+        : kind === "website"
+          ? [
+              "You are a senior QA lead.",
+              "Generate the most useful manual test cases for the website brief below.",
+              "Think like a test designer: include navigation, form, negative, boundary, and integration coverage when relevant.",
+              "Prioritize the discovered user journeys and feature candidates.",
+              "Do not write implementation details.",
+              "Use concise but complete steps.",
+              "Return only structured JSON that matches the provided schema.",
+            ]
+          : [
+              "You are a senior QA lead.",
+              "Generate the most useful manual test cases for the Azure DevOps User Story below.",
+              "Think like a test designer: include happy path, negative, boundary, and integration coverage when relevant.",
+              "Do not write implementation details.",
+              "Use concise but complete steps.",
+              "Return only structured JSON that matches the provided schema.",
+            ];
+
+    const label =
+      kind === "website"
+        ? "Website brief:"
+        : kind === "story"
+          ? "User story:"
+          : `${kind} brief:`;
+
+    return [...baseInstructions, "", label, JSON.stringify(content, null, 2)].join("\n");
+  }
+
+  async function createResponse(request = {}) {
+    const prompt = buildPrompt(request);
 
     const response = await fetch(`${baseUrl}/v1/responses`, {
       method: "POST",

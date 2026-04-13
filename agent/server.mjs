@@ -1,6 +1,7 @@
 import http from "node:http";
 import { createAzureDevOpsClient, resolveWorkItemId } from "./azure-devops-client.mjs";
-import { generateTestCasesForStory } from "./ai-test-case-generator.mjs";
+import { analyzeWebsite } from "./website-analyzer.mjs";
+import { generateTestCasesForStory, generateTestCasesForWebsite } from "./ai-test-case-generator.mjs";
 import { createTestPlansClient } from "./testplans-client.mjs";
 
 const PORT = Number(process.env.PORT || 3000);
@@ -174,6 +175,18 @@ function isProcessableStoryType(type) {
   ].includes(normalized);
 }
 
+function normalizeWebsiteUrl(input) {
+  const raw = String(input || "").trim();
+  if (!raw) {
+    throw new Error("A website URL is required.");
+  }
+
+  const withScheme = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+  const parsed = new URL(withScheme);
+  parsed.hash = "";
+  return parsed.toString();
+}
+
 function parsePositiveInteger(value) {
   const parsed = Number(value);
   if (Number.isFinite(parsed) && parsed > 0 && Number.isInteger(parsed)) {
@@ -274,6 +287,37 @@ async function processWebhook(payload, workItemId, client, config) {
   return { workItem, testCaseDrafts, uploadResult };
 }
 
+async function processWebsiteUrl(url, config) {
+  console.log(`[website] background processing started for ${url}`);
+  const websiteBrief = await analyzeWebsite(url);
+  console.log(
+    `[website] analyzed ${websiteBrief.pages.length} page(s) and ${websiteBrief.featureCandidates.length} feature candidate(s)`
+  );
+
+  const testCaseDrafts = await generateTestCasesForWebsite(websiteBrief, {
+    apiKey: config.openAiApiKey,
+    model: config.openAiModel,
+    baseUrl: config.openAiBaseUrl,
+    allowHeuristicFallback: config.allowHeuristicFallback,
+  });
+
+  console.log(
+    `[website] generated ${testCaseDrafts.testCases.length} test case(s) using ${testCaseDrafts.generationSource}`
+  );
+
+  const uploadResult = await uploadGeneratedTests(config, testCaseDrafts);
+  if (uploadResult?.skipped) {
+    console.log(`[website] upload skipped: ${uploadResult.reason}`);
+  } else {
+    console.log(
+      `[website] uploaded ${uploadResult.createdCases.length} test case(s) to plan ${uploadResult.planId}, suite ${uploadResult.suiteId}`
+    );
+  }
+
+  console.log(`[website] background processing finished for ${url}`);
+  return { websiteBrief, testCaseDrafts, uploadResult };
+}
+
 async function handleWebhook(req, res) {
   console.log(`[webhook] ${new Date().toISOString()} received request`);
   let payload;
@@ -326,6 +370,58 @@ async function handleWebhook(req, res) {
   }
 }
 
+async function handleWebsiteInspection(req, res, urlFromQuery = "") {
+  console.log(`[website] ${new Date().toISOString()} received request`);
+  let payload = {};
+
+  if (req.method === "POST") {
+    try {
+      payload = await readJsonBody(req);
+    } catch (error) {
+      console.error(`[website] invalid payload: ${error.message}`);
+      sendJson(res, 400, { ok: false, error: error.message });
+      return;
+    }
+  }
+
+  const rawUrl = String(payload?.url || payload?.websiteUrl || urlFromQuery || "").trim();
+  let websiteUrl;
+  try {
+    websiteUrl = normalizeWebsiteUrl(rawUrl);
+  } catch (error) {
+    console.error(`[website] invalid url: ${error.message}`);
+    sendJson(res, 400, { ok: false, error: error.message });
+    return;
+  }
+
+  let config;
+  try {
+    config = getConfig();
+    console.log(`[website] config summary: ${JSON.stringify(summarizeConfig(config))}`);
+  } catch (error) {
+    console.error(`[website] config error: ${error.message}`);
+    sendJson(res, 500, { ok: false, error: error.message });
+    return;
+  }
+
+  try {
+    sendJson(res, 200, {
+      ok: true,
+      message: "Website URL received and queued for processing.",
+      url: websiteUrl,
+    });
+
+    setImmediate(() => {
+      void processWebsiteUrl(websiteUrl, config).catch((error) => {
+        console.error(`[website] background processing failed: ${error.stack || error.message}`);
+      });
+    });
+  } catch (error) {
+    console.error(`[website] processing failed: ${error.stack || error.message}`);
+    sendJson(res, 502, { ok: false, error: error.message });
+  }
+}
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
 
@@ -349,6 +445,11 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "POST" && url.pathname === "/webhook") {
     await handleWebhook(req, res);
+    return;
+  }
+
+  if ((req.method === "GET" || req.method === "POST") && url.pathname === "/inspect-url") {
+    await handleWebsiteInspection(req, res, url.searchParams.get("url") || "");
     return;
   }
 

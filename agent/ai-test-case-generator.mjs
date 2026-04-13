@@ -39,8 +39,22 @@ function normalizeOpenAIResult(story, result) {
   };
 }
 
-export async function generateTestCasesForStory(story, options = {}) {
-  const fallback = generateHeuristicTestCaseDrafts(story);
+function normalizeWebsiteResult(websiteBrief, result) {
+  const summary = String(result?.summary || websiteBrief?.summary || "").trim();
+  const testCases = (result?.testCases || []).map(normalizeCase);
+
+  return {
+    websiteUrl: String(websiteBrief?.url || "").trim(),
+    websiteTitle: String(result?.storyTitle || websiteBrief?.title || "").trim(),
+    summary,
+    generationSource: "openai",
+    model: result?.model || null,
+    generatedAt: new Date().toISOString(),
+    testCases,
+  };
+}
+
+async function generateWithOpenAI(content, options, kind, fallbackFactory) {
   const apiKey = String(options.apiKey || process.env.OPENAI_API_KEY || "").trim();
   const allowHeuristicFallback = String(
     options.allowHeuristicFallback ?? process.env.ALLOW_HEURISTIC_FALLBACK ?? ""
@@ -52,6 +66,8 @@ export async function generateTestCasesForStory(story, options = {}) {
     allowHeuristicFallback === "true" ||
     allowHeuristicFallback === "yes" ||
     allowHeuristicFallback === "on";
+
+  const fallback = fallbackFactory();
 
   if (!apiKey) {
     if (heuristicFallbackEnabled) {
@@ -72,8 +88,10 @@ export async function generateTestCasesForStory(story, options = {}) {
       model: options.model || process.env.OPENAI_MODEL || "gpt-4o-mini",
       baseUrl: options.baseUrl || process.env.OPENAI_BASE_URL,
     });
-    const result = await client.createResponse(story);
-    return normalizeOpenAIResult(story, result);
+    const result = await client.createResponse({ kind, content });
+    return kind === "website"
+      ? normalizeWebsiteResult(content, result)
+      : normalizeOpenAIResult(content, result);
   } catch (error) {
     if (heuristicFallbackEnabled) {
       return {
@@ -86,4 +104,17 @@ export async function generateTestCasesForStory(story, options = {}) {
 
     throw new Error(`OpenAI generation failed: ${error.message}`);
   }
+}
+
+export async function generateTestCasesForStory(story, options = {}) {
+  return generateWithOpenAI(story, options, "story", () => generateHeuristicTestCaseDrafts(story));
+}
+
+export async function generateTestCasesForWebsite(websiteBrief, options = {}) {
+  return generateWithOpenAI(
+    websiteBrief,
+    options,
+    "website",
+    () => generateHeuristicTestCaseDrafts(websiteBrief)
+  );
 }

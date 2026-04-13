@@ -4,7 +4,7 @@ This folder contains the Azure DevOps webhook service that will:
 
 1. receive work-item webhook events
 2. fetch the full User Story from Azure DevOps
-3. generate a draft set of test cases from the story text
+3. generate a draft set of test cases from the story text or from a website crawl
 
 ## Local run
 
@@ -39,6 +39,10 @@ agent will read those too.
 - `GET /health`
 - `GET /`
 - `POST /webhook`
+- `GET /inspect-url?url=https://example.com`
+- `POST /inspect-url`
+
+`/inspect-url` crawls the given website URL, summarizes visible pages and feature candidates, generates test cases with OpenAI, and uploads them to Azure Test Plans if plan and suite IDs are configured.
 
 ## Webhook URL
 
