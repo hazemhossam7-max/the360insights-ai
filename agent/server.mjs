@@ -54,6 +54,69 @@ function readJsonBody(req, maxBytes = 1024 * 1024) {
   });
 }
 
+function parseTags(value) {
+  return String(value || "")
+    .split(";")
+    .map((tag) => tag.trim())
+    .filter(Boolean);
+}
+
+function extractTitleFromMessage(text) {
+  const message = String(text || "").trim();
+  if (!message) {
+    return "";
+  }
+
+  const titleMatch = message.match(/\((.*?)\)\s+(?:updated|created|deleted|commented)\s+by\b/i);
+  if (titleMatch?.[1]?.trim()) {
+    return titleMatch[1].trim();
+  }
+
+  const fallbackMatch = message.match(/\(([^()]+)\)/);
+  if (fallbackMatch?.[1]?.trim()) {
+    return fallbackMatch[1].trim();
+  }
+
+  return "";
+}
+
+function extractDetailedMessageText(payload) {
+  const parts = [
+    payload?.detailedMessage?.text,
+    payload?.detailedMessage?.markdown,
+    payload?.message?.text,
+    payload?.message?.markdown,
+  ]
+    .map((value) => String(value || "").trim())
+    .filter(Boolean);
+
+  return parts.join("\n").trim();
+}
+
+function buildStoryFromWebhookPayload(payload, workItemId) {
+  const fields = payload?.resource?.fields || {};
+  const detailedText = extractDetailedMessageText(payload);
+  const titleFromFields = String(fields["System.Title"] || "").trim();
+  const titleFromMessage = extractTitleFromMessage(payload?.message?.text || payload?.message?.markdown || "");
+  const descriptionFromFields = String(fields["System.Description"] || "").trim();
+  const acceptanceCriteriaFromFields = String(fields["Microsoft.VSTS.Common.AcceptanceCriteria"] || "").trim();
+
+  return {
+    id: Number(workItemId) || Number(fields["System.Id"]) || null,
+    url: String(payload?.resource?.url || "").trim(),
+    rev: payload?.resource?.rev || null,
+    title: titleFromFields || titleFromMessage || `Work item ${workItemId}`,
+    description: descriptionFromFields || detailedText || titleFromMessage || "",
+    acceptanceCriteria:
+      acceptanceCriteriaFromFields || descriptionFromFields || detailedText || titleFromMessage || "",
+    tags: parseTags(fields["System.Tags"]),
+    state: String(fields["System.State"] || "").trim(),
+    areaPath: String(fields["System.AreaPath"] || "").trim(),
+    iterationPath: String(fields["System.IterationPath"] || "").trim(),
+    source: "webhook-payload",
+  };
+}
+
 function getConfig() {
   const config = {
     orgUrl: readEnv("AZDO_ORG_URL", "azdo.org.url"),
@@ -161,7 +224,25 @@ async function handleWebhook(req, res) {
 
   try {
     console.log(`[webhook] resolved work item id: ${workItemId}`);
-    const workItem = await client.getWorkItem(workItemId);
+    let workItem;
+    try {
+      workItem = await client.getWorkItem(workItemId);
+    } catch (fetchError) {
+      const fallbackAllowed = /401|403|404/.test(String(fetchError?.message || ""));
+      if (!fallbackAllowed) {
+        throw fetchError;
+      }
+
+      workItem = buildStoryFromWebhookPayload(payload, workItemId);
+      console.warn(
+        `[webhook] Azure DevOps read failed, using webhook payload fallback for work item ${workItemId}: ${fetchError.message}`
+      );
+    }
+
+    if (!workItem?.title) {
+      workItem = buildStoryFromWebhookPayload(payload, workItemId);
+    }
+
     console.log(`[webhook] fetched work item: ${workItem.id} - ${workItem.title}`);
     const config = getConfig();
     const testCaseDrafts = await generateTestCasesForStory(workItem, {
