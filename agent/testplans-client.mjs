@@ -74,7 +74,22 @@ export function createTestPlansClient(config) {
   }
 
   return {
+    async getTestPlan(planId) {
+      const url = new URL(
+        `${orgUrl}/${encodeURIComponent(project)}/_apis/test/plans/${encodeURIComponent(planId)}`
+      );
+      url.searchParams.set("api-version", "7.1");
+
+      return requestJson(url.toString());
+    },
+
     async createTestSuite({ planId, name }) {
+      const plan = await this.getTestPlan(planId);
+      const parentSuiteId = Number(plan?.rootSuite?.id);
+      if (!Number.isFinite(parentSuiteId) || parentSuiteId <= 0) {
+        throw new Error("Azure DevOps did not return a valid root suite for the test plan.");
+      }
+
       const url = new URL(
         `${orgUrl}/${encodeURIComponent(project)}/_apis/testplan/Plans/${encodeURIComponent(planId)}/suites`
       );
@@ -85,6 +100,9 @@ export function createTestPlansClient(config) {
         body: JSON.stringify({
           name,
           suiteType: "staticTestSuite",
+          parentSuite: {
+            id: parentSuiteId,
+          },
         }),
       });
 
