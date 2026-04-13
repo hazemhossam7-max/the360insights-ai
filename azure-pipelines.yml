@@ -5,7 +5,7 @@ pr:
 - main
 
 pool:
-  name: "Default"
+  vmImage: "ubuntu-latest"
 
 variables:
   CI: "true"
