@@ -42,14 +42,28 @@ function normalizeOpenAIResult(story, result) {
 export async function generateTestCasesForStory(story, options = {}) {
   const fallback = generateHeuristicTestCaseDrafts(story);
   const apiKey = String(options.apiKey || process.env.OPENAI_API_KEY || "").trim();
+  const allowHeuristicFallback = String(
+    options.allowHeuristicFallback ?? process.env.ALLOW_HEURISTIC_FALLBACK ?? ""
+  )
+    .trim()
+    .toLowerCase();
+  const heuristicFallbackEnabled =
+    allowHeuristicFallback === "1" ||
+    allowHeuristicFallback === "true" ||
+    allowHeuristicFallback === "yes" ||
+    allowHeuristicFallback === "on";
 
   if (!apiKey) {
-    return {
-      ...fallback,
-      generationSource: "heuristic",
-      model: null,
-      generationNotes: "OPENAI_API_KEY was not set.",
-    };
+    if (heuristicFallbackEnabled) {
+      return {
+        ...fallback,
+        generationSource: "heuristic",
+        model: null,
+        generationNotes: "OPENAI_API_KEY was not set.",
+      };
+    }
+
+    throw new Error("OPENAI_API_KEY is required for AI generation.");
   }
 
   try {
@@ -61,11 +75,15 @@ export async function generateTestCasesForStory(story, options = {}) {
     const result = await client.createResponse(story);
     return normalizeOpenAIResult(story, result);
   } catch (error) {
-    return {
-      ...fallback,
-      generationSource: "heuristic",
-      model: null,
-      generationNotes: error.message,
-    };
+    if (heuristicFallbackEnabled) {
+      return {
+        ...fallback,
+        generationSource: "heuristic",
+        model: null,
+        generationNotes: error.message,
+      };
+    }
+
+    throw new Error(`OpenAI generation failed: ${error.message}`);
   }
 }

@@ -24,8 +24,10 @@ npm start
 - `AZDO_TEST_PLAN_ID` - optional, enables Test Plans upload
 - `AZDO_TEST_SUITE_ID` - optional, enables Test Plans upload
 - `PORT` - optional, defaults to `3000`
+- `ALLOW_HEURISTIC_FALLBACK` - optional, set to `true` only if you want the rule-based fallback generator
 
-If `OPENAI_API_KEY` is not set, the agent falls back to the rule-based generator.
+By default, the agent uses OpenAI for test generation and will fail if the API key or request fails.
+Set `ALLOW_HEURISTIC_FALLBACK=true` only if you want to keep the older rule-based fallback as a backup.
 
 If your Azure App Service already has the legacy lowercase keys from earlier setup
 (`azdo.org.url`, `azdo.project`, `azdo.pat`, `azdo.test.plan.id`,

@@ -135,6 +135,7 @@ function getConfig() {
     openAiApiKey: readEnv("OPENAI_API_KEY", "openai.key"),
     openAiModel: readEnv("OPENAI_MODEL", "openai.model"),
     openAiBaseUrl: readEnv("OPENAI_BASE_URL", "openai.base.url"),
+    allowHeuristicFallback: readEnv("ALLOW_HEURISTIC_FALLBACK", "openai.fallback"),
   };
 
   return config;
@@ -150,6 +151,7 @@ function summarizeConfig(config) {
     openAiApiKeyPresent: Boolean(config.openAiApiKey),
     openAiModel: config.openAiModel || null,
     openAiBaseUrlPresent: Boolean(config.openAiBaseUrl),
+    heuristicFallbackEnabled: Boolean(config.allowHeuristicFallback),
     patLength: config.pat ? String(config.pat).length : 0,
     orgUrl: config.orgUrl || null,
     project: config.project || null,
@@ -226,6 +228,7 @@ async function processWebhook(payload, workItemId, client, config) {
     apiKey: config.openAiApiKey,
     model: config.openAiModel,
     baseUrl: config.openAiBaseUrl,
+    allowHeuristicFallback: config.allowHeuristicFallback,
   });
 
   console.log(
