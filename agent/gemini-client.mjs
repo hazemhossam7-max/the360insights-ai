@@ -90,7 +90,7 @@ function buildSchema(targetCaseCount = 1) {
   };
 }
 
-function buildPrompt(request) {
+function buildPrompt(request, { repair = false } = {}) {
   const kind = String(request?.kind || "story").trim().toLowerCase();
   const content = request?.content ?? request;
   const targetCaseCount = Math.max(1, Number(request?.targetCaseCount) || 1);
@@ -108,7 +108,7 @@ function buildPrompt(request) {
             "Use concise but complete steps.",
             "Return only structured JSON that matches the provided schema.",
           ]
-        : [
+          : [
             "You are a senior QA lead.",
             "Generate the most useful manual test cases for the Azure DevOps User Story below.",
             "Think like a test designer: include happy path, negative, boundary, and integration coverage when relevant.",
@@ -117,6 +117,14 @@ function buildPrompt(request) {
             "Use concise but complete steps.",
             "Return only structured JSON that matches the provided schema.",
           ];
+  const repairInstructions = repair
+    ? [
+        "The previous response was invalid JSON.",
+        "Return only valid JSON.",
+        "Do not wrap the JSON in markdown fences.",
+        "Do not add commentary before or after the JSON.",
+      ]
+    : [];
 
   const label =
     kind === "website"
@@ -125,7 +133,7 @@ function buildPrompt(request) {
         ? "User story:"
         : `${kind} brief:`;
 
-  return [...baseInstructions, "", label, JSON.stringify(content, null, 2)].join("\n");
+  return [...repairInstructions, ...baseInstructions, "", label, JSON.stringify(content, null, 2)].join("\n");
 }
 
 export function createGeminiClient(config) {
@@ -137,8 +145,8 @@ export function createGeminiClient(config) {
     throw new Error("GEMINI_API_KEY is required for AI generation.");
   }
 
-  async function createResponse(request = {}) {
-    const prompt = buildPrompt(request);
+  async function requestGemini(request = {}, repair = false) {
+    const prompt = buildPrompt(request, { repair });
     const url = `${baseUrl}/models/${encodeURIComponent(model)}:generateContent`;
 
     const response = await fetch(url, {
@@ -158,7 +166,7 @@ export function createGeminiClient(config) {
           responseMimeType: "application/json",
           responseJsonSchema: buildSchema(request?.targetCaseCount),
           temperature: 0.2,
-          maxOutputTokens: 1600,
+          maxOutputTokens: 4096,
         },
       }),
     });
@@ -178,20 +186,27 @@ export function createGeminiClient(config) {
     try {
       parsed = JSON.parse(extractJsonText(text));
     } catch {
-      throw new Error("Gemini returned invalid JSON output.");
+      if (repair) {
+        throw new Error("Gemini returned invalid JSON output.");
+      }
+
+      return requestGemini(request, true);
     }
 
-    return {
-      model,
-      storyTitle: String(parsed.storyTitle || "").trim(),
-      summary: String(parsed.summary || "").trim(),
-      testCases: Array.isArray(parsed.testCases) ? parsed.testCases : [],
-      raw: parsed,
-    };
+    return parsed;
   }
 
   return {
     model,
-    createResponse,
+    async createResponse(request = {}) {
+      const parsed = await requestGemini(request, false);
+      return {
+        model,
+        storyTitle: String(parsed.storyTitle || "").trim(),
+        summary: String(parsed.summary || "").trim(),
+        testCases: Array.isArray(parsed.testCases) ? parsed.testCases : [],
+        raw: parsed,
+      };
+    },
   };
 }
