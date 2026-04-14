@@ -158,11 +158,17 @@ function inferCaseKind(testCase, index) {
   if (/error|invalid|empty state|unavailable|not found|graceful/.test(text)) {
     return "error";
   }
-  if (/navigation|route|page|path/.test(text)) {
-    return "navigation";
+  if (/call to action|call-to-action|cta|navigation elements|essential navigation|menu|links/.test(text)) {
+    return "cta";
+  }
+  if (/content accuracy|content consistency|summary|consistency with summary|accuracy/.test(text)) {
+    return "content";
   }
   if (/content|branding|headline|hero/.test(text)) {
     return "branding";
+  }
+  if (/navigation|route|page|path/.test(text)) {
+    return "navigation";
   }
   if (/performance|load time|page load|response time|latency|speed|fast|slow/.test(text)) {
     return "performance";
@@ -249,6 +255,40 @@ async function verifyBranding(page, websiteBrief) {
     title.includes(host) || title.includes(siteTitle) || body.includes(host) || body.includes(siteTitle),
     "The landing page does not clearly reflect the site identity."
   );
+}
+
+async function verifyCtaPresence(page, websiteBrief) {
+  await goHome(page, websiteBrief.url);
+  const linkCount = await page.locator("a").count();
+  const buttonCount = await page.locator("button,[role='button']").count();
+  await assert(linkCount + buttonCount > 0, "No navigation or call-to-action elements were found.");
+  await assert(Boolean(cleanText(await page.title()) || (await bodyText(page))), "The page content is empty.");
+}
+
+function summarizeContentFocus(websiteBrief) {
+  const parts = [websiteBrief?.summary, ...(websiteBrief?.featureCandidates || []).map((item) => item?.feature)];
+  return Array.from(
+    new Set(
+      parts
+        .map((value) => cleanText(value).toLowerCase())
+        .filter(Boolean)
+    )
+  );
+}
+
+async function verifyContentConsistency(page, websiteBrief) {
+  await goHome(page, websiteBrief.url);
+  const title = cleanText(await page.title()).toLowerCase();
+  const body = (await bodyText(page)).toLowerCase();
+  const keywords = summarizeContentFocus(websiteBrief);
+
+  await assert(Boolean(title) || Boolean(body), "The page content is empty.");
+
+  if (keywords.length && keywords.some((keyword) => title.includes(keyword) || body.includes(keyword))) {
+    return;
+  }
+
+  await assert((await page.locator("h1, h2, h3").count()) > 0, "No visible headings were found.");
 }
 
 async function verifyNavigation(page, websiteBrief, testCase) {
@@ -389,6 +429,10 @@ async function runGeneratedCase(page, websiteBrief, testCase, index) {
       return verifyHomePage(page, websiteBrief);
     case "branding":
       return verifyBranding(page, websiteBrief);
+    case "cta":
+      return verifyCtaPresence(page, websiteBrief);
+    case "content":
+      return verifyContentConsistency(page, websiteBrief);
     case "navigation":
       return verifyNavigation(page, websiteBrief, testCase);
     case "responsive":
