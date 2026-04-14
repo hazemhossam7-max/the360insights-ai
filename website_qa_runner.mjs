@@ -18,6 +18,127 @@ function escapeRegExp(value) {
   return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+const FOCUS_STOPWORDS = new Set([
+  "verify",
+  "display",
+  "displayed",
+  "displaying",
+  "show",
+  "shown",
+  "shows",
+  "check",
+  "ensure",
+  "confirm",
+  "validate",
+  "data",
+  "information",
+  "details",
+  "section",
+  "area",
+  "panel",
+  "page",
+  "view",
+  "visible",
+  "clearly",
+  "legibly",
+  "successfully",
+  "indicating",
+  "successful",
+  "retrieval",
+  "rendering",
+  "loaded",
+  "loads",
+  "within",
+  "its",
+  "their",
+  "the",
+  "a",
+  "an",
+  "and",
+  "or",
+  "of",
+  "to",
+  "for",
+  "on",
+  "in",
+  "by",
+  "with",
+  "is",
+  "are",
+  "be",
+  "was",
+  "were",
+  "e.g",
+  "eg",
+]);
+
+function normalizeFocusText(value) {
+  return cleanText(String(value || ""))
+    .replace(/\([^)]*\)/g, " ")
+    .replace(/\b(e\.g\.|for example)\b/gi, " ")
+    .replace(/\b(is|are|was|were|be|been|being)\s+(displayed|shown|rendered|presented|visible)\b/gi, " ")
+    .replace(/\bwithin its designated section\b/gi, " ")
+    .replace(/\bindicating\b.*$/i, " ")
+    .replace(/\bthat\b.*$/i, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function extractFocusAliases(testCase) {
+  const rawCandidates = [
+    cleanText(testCase?.title || ""),
+    cleanText(testCase?.sourceCriterion || ""),
+    cleanText(testCase?.expectedResult || ""),
+  ].filter(Boolean);
+
+  const aliases = new Set();
+
+  for (const raw of rawCandidates) {
+    let text = normalizeFocusText(raw)
+      .replace(/^[Vv]erify\s+/g, "")
+      .replace(/^[Dd]isplay\s+of\s+/g, "")
+      .replace(/^[Dd]isplay\s+/g, "")
+      .replace(/^[Vv]erify\s+[Dd]isplay\s+of\s+/g, "")
+      .replace(/\b(under|within|less than|more than|no more than)\b.*$/i, "")
+      .trim();
+
+    if (!text) {
+      continue;
+    }
+
+    const words = text
+      .toLowerCase()
+      .split(/[^a-z0-9]+/i)
+      .map((word) => word.trim())
+      .filter((word) => word && !FOCUS_STOPWORDS.has(word));
+
+    if (!words.length) {
+      continue;
+    }
+
+    const joined = words.join(" ");
+    aliases.add(joined);
+
+    for (let size = Math.min(5, words.length); size >= 2; size -= 1) {
+      aliases.add(words.slice(0, size).join(" "));
+    }
+
+    if (joined.endsWith(" data")) {
+      aliases.add(joined.replace(/\s+data$/i, ""));
+    }
+    if (joined.endsWith(" information")) {
+      aliases.add(joined.replace(/\s+information$/i, ""));
+    }
+  }
+
+  return Array.from(aliases).filter(Boolean);
+}
+
+function textIncludesAny(text, aliases) {
+  const haystack = cleanText(text).toLowerCase();
+  return aliases.some((alias) => haystack.includes(alias.toLowerCase()));
+}
+
 function inferCaseKind(testCase, index) {
   const text = cleanText(
     [testCase?.title, testCase?.sourceCriterion, ...(testCase?.steps || []), testCase?.expectedResult]
@@ -131,9 +252,10 @@ async function verifyBranding(page, websiteBrief) {
 }
 
 async function verifyNavigation(page, websiteBrief, testCase) {
-  const feature = cleanText(testCase?.sourceCriterion || testCase?.title || "");
+  const aliases = extractFocusAliases(testCase);
   const paths = candidatePaths(websiteBrief);
-  const match = paths.find((item) => item.toLowerCase().includes(feature.toLowerCase())) || paths[0];
+  const match =
+    paths.find((item) => aliases.some((alias) => item.toLowerCase().includes(alias.toLowerCase()))) || paths[0];
 
   await goHome(page, websiteBrief.url);
 
@@ -151,31 +273,33 @@ async function verifyNavigation(page, websiteBrief, testCase) {
 
   const link = page
     .locator("a")
-    .filter({ hasText: new RegExp(escapeRegExp(feature), "i") })
+    .filter({ hasText: new RegExp(escapeRegExp(aliases[0] || cleanText(testCase?.title || "")), "i") })
     .first();
 
   if (await link.count()) {
     await link.click();
     await page.waitForLoadState("networkidle").catch(() => {});
-    await assert(Boolean(cleanText(await page.title())), `The navigated page for ${feature} has no title.`);
+    await assert(Boolean(cleanText(await page.title())), `The navigated page for ${aliases[0] || "navigation target"} has no title.`);
     return;
   }
 
-  throw new Error(`Could not find a navigation target for "${feature}".`);
+  throw new Error(`Could not find a navigation target for "${aliases[0] || cleanText(testCase?.title || "target")}".`);
 }
 
 async function verifyFeature(page, websiteBrief, testCase) {
-  const feature = cleanText(testCase?.sourceCriterion || testCase?.title || "").toLowerCase();
+  const aliases = extractFocusAliases(testCase);
   await goHome(page, websiteBrief.url);
 
+  const title = cleanText(await page.title());
   const body = await bodyText(page);
-  if (feature && body.toLowerCase().includes(feature)) {
+  const pageText = `${title}\n${body}`;
+  if (aliases.length && textIncludesAny(pageText, aliases)) {
     return;
   }
 
   const interactive = page
     .locator("a,button,[role='button']")
-    .filter({ hasText: new RegExp(escapeRegExp(feature), "i") })
+    .filter({ hasText: new RegExp(escapeRegExp(aliases[0] || cleanText(testCase?.title || "")), "i") })
     .first();
 
   if (await interactive.count()) {
@@ -183,14 +307,14 @@ async function verifyFeature(page, websiteBrief, testCase) {
     await page.waitForLoadState("networkidle").catch(() => {});
     const updatedBody = await bodyText(page);
     await assert(
-      updatedBody.toLowerCase().includes(feature) || cleanText(await page.title()),
-      `The feature flow for "${feature}" did not become visible after interaction.`
+      textIncludesAny(`${cleanText(await page.title())}\n${updatedBody}`, aliases) || cleanText(await page.title()),
+      `The feature flow for "${aliases[0] || cleanText(testCase?.title || "target")}" did not become visible after interaction.`
     );
     return;
   }
 
   const paths = candidatePaths(websiteBrief);
-  const pathMatch = paths.find((item) => item.toLowerCase().includes(feature));
+  const pathMatch = paths.find((item) => aliases.some((alias) => item.toLowerCase().includes(alias.toLowerCase())));
   if (pathMatch) {
     const response = await page.goto(new URL(pathMatch, websiteBrief.url).toString(), { waitUntil: "domcontentloaded" });
     await page.waitForLoadState("networkidle").catch(() => {});
@@ -198,7 +322,7 @@ async function verifyFeature(page, websiteBrief, testCase) {
     return;
   }
 
-  throw new Error(`Could not validate the "${feature}" feature on the site.`);
+  throw new Error(`Could not validate the "${aliases[0] || cleanText(testCase?.title || "target")}" feature on the site.`);
 }
 
 async function verifyResponsive(page, websiteBrief) {
