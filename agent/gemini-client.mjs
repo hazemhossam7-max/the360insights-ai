@@ -2,6 +2,19 @@ function trimTrailingSlash(value) {
   return String(value || "").replace(/\/+$/, "");
 }
 
+function normalizeOptionalValue(value) {
+  const trimmed = String(value || "").trim();
+  if (!trimmed) {
+    return "";
+  }
+
+  if (/^\$\([^)]+\)$/.test(trimmed) || /^\$\{\{.*\}\}$/.test(trimmed)) {
+    return "";
+  }
+
+  return trimmed;
+}
+
 function extractText(response) {
   const chunks = [];
 
@@ -137,9 +150,11 @@ function buildPrompt(request, { repair = false } = {}) {
 }
 
 export function createGeminiClient(config) {
-  const apiKey = String(config.apiKey || "").trim();
-  const model = String(config.model || "gemini-2.5-flash").trim();
-  const baseUrl = trimTrailingSlash(config.baseUrl || "https://generativelanguage.googleapis.com/v1beta");
+  const apiKey = normalizeOptionalValue(config.apiKey);
+  const model = normalizeOptionalValue(config.model) || "gemini-2.5-flash";
+  const baseUrl =
+    trimTrailingSlash(normalizeOptionalValue(config.baseUrl)) ||
+    "https://generativelanguage.googleapis.com/v1beta";
 
   if (!apiKey) {
     throw new Error("GEMINI_API_KEY is required for AI generation.");
