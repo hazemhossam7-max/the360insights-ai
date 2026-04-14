@@ -74,6 +74,15 @@ export function createTestPlansClient(config) {
   }
 
   return {
+    async getTestPlan(planId) {
+      const url = new URL(
+        `${orgUrl}/${encodeURIComponent(project)}/_apis/testplan/plans/${encodeURIComponent(planId)}`
+      );
+      url.searchParams.set("api-version", "7.1");
+
+      return requestJson(url.toString());
+    },
+
     async createTestSuite({ planId, parentSuiteId, name }) {
       const numericParentSuiteId = Number(parentSuiteId);
       if (!Number.isFinite(numericParentSuiteId) || numericParentSuiteId <= 0) {
@@ -81,7 +90,7 @@ export function createTestPlansClient(config) {
       }
 
       const url = new URL(
-        `${orgUrl}/${encodeURIComponent(project)}/_apis/testplan/Plans/${encodeURIComponent(planId)}/suites`
+        `${orgUrl}/${encodeURIComponent(project)}/_apis/testplan/plans/${encodeURIComponent(planId)}/suites`
       );
       url.searchParams.set("api-version", "7.1");
 

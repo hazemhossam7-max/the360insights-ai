@@ -244,9 +244,15 @@ async function uploadGeneratedTests(config, testCaseDrafts) {
     console.warn(
       `[webhook] suite ${suiteId} hit the link limit, creating a new suite named "${fallbackSuiteName}"`
     );
+    const plan = await client.getTestPlan(planId);
+    const parentSuiteId = Number(plan?.rootSuite?.id);
+    if (!Number.isFinite(parentSuiteId) || parentSuiteId <= 0) {
+      throw new Error("Azure DevOps did not return a valid root suite for the test plan.");
+    }
+
     const createdSuite = await client.createTestSuite({
       planId,
-      parentSuiteId: suiteId,
+      parentSuiteId,
       name: fallbackSuiteName,
     });
     targetSuiteId = createdSuite.id;
