@@ -43,8 +43,36 @@ function inferCaseKind(testCase, index) {
   if (/content|branding|headline|hero/.test(text)) {
     return "branding";
   }
+  if (/performance|load time|page load|response time|latency|speed|fast|slow/.test(text)) {
+    return "performance";
+  }
 
   return "feature";
+}
+
+function parsePerformanceBudgetMs(testCase) {
+  const text = cleanText(
+    [testCase?.title, testCase?.sourceCriterion, ...(testCase?.steps || []), testCase?.expectedResult]
+      .filter(Boolean)
+      .join(" ")
+  ).toLowerCase();
+
+  const rangeMatch = text.match(/(?:under|within|less than|no more than)\s*(\d+(?:\.\d+)?)\s*(?:-|to)\s*(\d+(?:\.\d+)?)\s*seconds?/i);
+  if (rangeMatch) {
+    return Math.round(Number(rangeMatch[2]) * 1000);
+  }
+
+  const singleMatch = text.match(/(?:under|within|less than|no more than)\s*(\d+(?:\.\d+)?)\s*seconds?/i);
+  if (singleMatch) {
+    return Math.round(Number(singleMatch[1]) * 1000);
+  }
+
+  const msMatch = text.match(/(?:under|within|less than|no more than)\s*(\d+(?:\.\d+)?)\s*ms\b/i);
+  if (msMatch) {
+    return Math.round(Number(msMatch[1]));
+  }
+
+  return 5000;
 }
 
 async function bodyText(page) {
@@ -211,6 +239,24 @@ async function verifyErrorHandling(page, websiteBrief) {
   await assert(Boolean(cleanText(await page.title()) || (await bodyText(page))), "Invalid-path response was empty.");
 }
 
+async function verifyPerformance(page, websiteBrief, testCase) {
+  const budgetMs = parsePerformanceBudgetMs(testCase);
+  const start = performance.now();
+  const response = await page.goto(websiteBrief.url, { waitUntil: "domcontentloaded" });
+  await page.waitForLoadState("networkidle").catch(() => {});
+  const elapsedMs = Math.round(performance.now() - start);
+  const title = cleanText(await page.title());
+  const body = await bodyText(page);
+
+  await assert(!response || response.status() < 500, `Performance page returned HTTP ${response?.status() || "unknown"}.`);
+  await assert(Boolean(title), "The page title is empty during the performance check.");
+  await assert(Boolean(body), "The page body is empty during the performance check.");
+  await assert(
+    elapsedMs <= budgetMs,
+    `Page load took ${elapsedMs}ms, which exceeds the ${budgetMs}ms performance budget.`
+  );
+}
+
 async function runGeneratedCase(page, websiteBrief, testCase, index) {
   const kind = inferCaseKind(testCase, index);
 
@@ -227,6 +273,8 @@ async function runGeneratedCase(page, websiteBrief, testCase, index) {
       return verifyAccessibility(page, websiteBrief);
     case "error":
       return verifyErrorHandling(page, websiteBrief);
+    case "performance":
+      return verifyPerformance(page, websiteBrief, testCase);
     default:
       return verifyFeature(page, websiteBrief, testCase);
   }
