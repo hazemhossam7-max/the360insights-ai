@@ -180,6 +180,19 @@ The QA runner:
 - captures screenshots and markdown bug reports on failure
 - writes a JSON summary to `bug_reports/latest_report.json`
 
+Run the generated website automation suite:
+
+```bash
+npm run test:website:auto -- https://example.com
+```
+
+The generated website automation runner:
+
+- analyzes the target website
+- asks Gemini for coverage
+- executes the generated checks in Playwright
+- writes a JSON summary to `bug_reports/latest_website_automation.json`
+
 ## Azure DevOps Agent
 
 The repo also includes a separate webhook agent in [`agent/`](./agent/).
@@ -212,6 +225,8 @@ The agent expects these environment variables:
 - `AZDO_TEST_PLAN_ID` and `AZDO_TEST_SUITE_ID` if you want the agent to upload test cases into Azure Test Plans
 
 The agent also exposes `GET /inspect-url?url=https://example.com` and `POST /inspect-url` for website analysis. It crawls the site, summarizes visible pages and features, and then generates and uploads test cases the same way it does for user stories.
+
+If you want the generated website coverage to run automatically in Azure Pipelines, set a `websiteUrl` variable and provide `GEMINI_API_KEY`. The pipeline can then call `website_qa_runner.mjs` and execute the AI-generated coverage in Playwright.
 
 If your App Service is on a Free or Shared tier and `Always On` is unavailable, the repo includes a keep-alive GitHub Action in `.github/workflows/keepalive-trip-budget-agent.yml` that pings the `/health` endpoint every 15 minutes to reduce cold-start delays.
 

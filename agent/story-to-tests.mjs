@@ -167,6 +167,70 @@ function generateWebsiteTestCaseDrafts(websiteBrief) {
     });
   }
 
+  const extraCases = [
+    {
+      title: `Verify accessibility basics on ${websiteTitle}`,
+      sourceCriterion: "Accessibility basics",
+      steps: [
+        `Open the ${websiteTitle} home page.`,
+        "Check that headings, labels, and controls are readable and logically ordered.",
+        "Confirm primary actions are accessible from the keyboard.",
+        "Verify key content is understandable without relying only on color.",
+      ],
+      expectedResult: `The ${websiteTitle} interface exposes basic accessible navigation and readable content.`,
+    },
+    {
+      title: `Verify error handling on ${websiteTitle}`,
+      sourceCriterion: "Error handling",
+      steps: [
+        `Open the ${websiteTitle} website.`,
+        "Trigger an obvious invalid or unavailable path if one exists.",
+        "Confirm the app shows a graceful error or empty state instead of a crash.",
+        "Verify the user can recover or navigate back to a usable area.",
+      ],
+      expectedResult: `The ${websiteTitle} site handles invalid or unavailable states gracefully.`,
+    },
+    {
+      title: `Verify primary content and branding on ${websiteTitle}`,
+      sourceCriterion: "Content and branding",
+      steps: [
+        `Open the ${websiteTitle} home page.`,
+        "Confirm the main headline, branding, and supporting content match the site purpose.",
+        "Verify there is no obvious mismatch between page title and visible content.",
+        "Confirm the main user journey is discoverable from the landing page.",
+      ],
+      expectedResult: `The ${websiteTitle} landing page clearly communicates the product purpose and main journey.`,
+    },
+    {
+      title: `Verify navigation consistency across ${websiteTitle}`,
+      sourceCriterion: "Navigation consistency",
+      steps: [
+        `Open the ${websiteTitle} home page.`,
+        "Use the top-level navigation or links to move between key areas.",
+        "Confirm the browser location changes as expected.",
+        "Verify the user can return to the home page without losing context.",
+      ],
+      expectedResult: `The ${websiteTitle} navigation is consistent and allows movement between key areas.`,
+    },
+  ];
+
+  for (const extra of extraCases) {
+    if (cases.length >= targetCount) {
+      break;
+    }
+
+    cases.push({
+      id: `TC-${String(cases.length + 1).padStart(3, "0")}`,
+      title: extra.title,
+      preconditions: [`The ${websiteTitle} website is reachable.`],
+      steps: extra.steps,
+      expectedResult: extra.expectedResult,
+      priority: "Medium",
+      automationCandidate: true,
+      sourceCriterion: extra.sourceCriterion,
+    });
+  }
+
   return {
     websiteTitle,
     summary: summary || `Website at ${cleanText(websiteBrief?.host || websiteBrief?.url || websiteTitle)}`,

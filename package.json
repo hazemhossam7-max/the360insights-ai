@@ -8,7 +8,8 @@
     "agent:serve": "node agent/server.mjs",
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",
-    "test:e2e:legacy": "node qa_runner.mjs"
+    "test:e2e:legacy": "node qa_runner.mjs",
+    "test:website:auto": "node website_qa_runner.mjs"
   },
   "dependencies": {
     "playwright": "^1.54.2"
