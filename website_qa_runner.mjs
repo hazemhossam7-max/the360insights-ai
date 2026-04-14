@@ -158,6 +158,9 @@ function inferCaseKind(testCase, index) {
   if (/error|invalid|empty state|unavailable|not found|graceful/.test(text)) {
     return "error";
   }
+  if (/typical user flow|user flow|workflow|works for a typical/.test(text)) {
+    return "flow";
+  }
   if (/call to action|call-to-action|cta|navigation elements|essential navigation|menu|links/.test(text)) {
     return "cta";
   }
@@ -365,6 +368,42 @@ async function verifyFeature(page, websiteBrief, testCase) {
   throw new Error(`Could not validate the "${aliases[0] || cleanText(testCase?.title || "target")}" feature on the site.`);
 }
 
+async function verifyFlow(page, websiteBrief, testCase) {
+  const aliases = extractFocusAliases(testCase);
+  await goHome(page, websiteBrief.url);
+
+  const title = cleanText(await page.title());
+  const body = await bodyText(page);
+  const interactiveCount = await page.locator("a,button,[role='button']").count();
+
+  await assert(Boolean(title), "The page title is empty.");
+  await assert(Boolean(body), "The page body is empty.");
+  await assert(interactiveCount > 0, "No interactive elements were found for the user flow check.");
+
+  const meaningfulAlias = aliases.find((alias) => alias.length >= 4) || "";
+  if (meaningfulAlias) {
+    const interactive = page
+      .locator("a,button,[role='button']")
+      .filter({ hasText: new RegExp(escapeRegExp(meaningfulAlias), "i") })
+      .first();
+
+    if (await interactive.count()) {
+      await interactive.click().catch(() => {});
+      await page.waitForLoadState("networkidle").catch(() => {});
+      await assert(Boolean(cleanText(await page.title()) || (await bodyText(page))), "The clicked flow target led to an empty page.");
+      return;
+    }
+  }
+
+  const paths = candidatePaths(websiteBrief);
+  if (paths.length) {
+    const response = await page.goto(new URL(paths[0], websiteBrief.url).toString(), { waitUntil: "domcontentloaded" });
+    await page.waitForLoadState("networkidle").catch(() => {});
+    await assert(!response || response.status() < 500, `User flow page returned HTTP ${response?.status() || "unknown"}.`);
+    await assert(Boolean(cleanText(await page.title()) || (await bodyText(page))), "The flow destination page was empty.");
+  }
+}
+
 async function verifyResponsive(page, websiteBrief) {
   await page.setViewportSize({ width: 1440, height: 1200 });
   await goHome(page, websiteBrief.url);
@@ -443,6 +482,8 @@ async function runGeneratedCase(page, websiteBrief, testCase, index) {
       return verifyErrorHandling(page, websiteBrief);
     case "performance":
       return verifyPerformance(page, websiteBrief, testCase);
+    case "flow":
+      return verifyFlow(page, websiteBrief, testCase);
     default:
       return verifyFeature(page, websiteBrief, testCase);
   }
