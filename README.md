@@ -226,7 +226,7 @@ The agent expects these environment variables:
 
 The agent also exposes `GET /inspect-url?url=https://example.com` and `POST /inspect-url` for website analysis. It crawls the site, summarizes visible pages and features, and then generates and uploads test cases the same way it does for user stories.
 
-If you want the generated website coverage to run automatically in Azure Pipelines, set a `websiteUrl` variable and provide `GEMINI_API_KEY`. The pipeline can then call `website_qa_runner.mjs` and execute the AI-generated coverage in Playwright.
+If you want the generated website coverage to run automatically in Azure Pipelines, pass the `websiteUrl` pipeline parameter when you click **Run pipeline** and provide `GEMINI_API_KEY` as a secret pipeline variable. The pipeline can then call `website_qa_runner.mjs` and execute the AI-generated coverage in Playwright.
 
 If your App Service is on a Free or Shared tier and `Always On` is unavailable, the repo includes a keep-alive GitHub Action in `.github/workflows/keepalive-trip-budget-agent.yml` that pings the `/health` endpoint every 15 minutes to reduce cold-start delays.
 

@@ -4,6 +4,12 @@ trigger:
 pr:
 - main
 
+parameters:
+  - name: websiteUrl
+    displayName: Website URL
+    type: string
+    default: ""
+
 pool:
   vmImage: "ubuntu-latest"
 
@@ -29,14 +35,14 @@ steps:
 - script: npm run test:e2e
   displayName: "Run Playwright end-to-end tests"
 
-- script: node website_qa_runner.mjs "$(websiteUrl)"
-  displayName: "Run AI-generated website automation"
-  condition: and(succeeded(), ne(variables['websiteUrl'], ''))
-  env:
-    GEMINI_API_KEY: $(GEMINI_API_KEY)
-    GEMINI_MODEL: $(GEMINI_MODEL)
-    GEMINI_BASE_URL: $(GEMINI_BASE_URL)
-    AI_PROVIDER: gemini
+- ${{ if ne(parameters.websiteUrl, '') }}:
+  - script: node website_qa_runner.mjs "${{ parameters.websiteUrl }}"
+    displayName: "Run AI-generated website automation"
+    env:
+      GEMINI_API_KEY: $(GEMINI_API_KEY)
+      GEMINI_MODEL: $(GEMINI_MODEL)
+      GEMINI_BASE_URL: $(GEMINI_BASE_URL)
+      AI_PROVIDER: gemini
 
 - task: PublishTestResults@2
   displayName: "Publish JUnit test results"
