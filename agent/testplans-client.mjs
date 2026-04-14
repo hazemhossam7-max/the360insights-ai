@@ -9,6 +9,14 @@ function buildBasicAuthHeader(pat) {
   return `Basic ${Buffer.from(`:${pat}`).toString("base64")}`;
 }
 
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isRetryableStatus(status) {
+  return [429, 500, 502, 503, 504].includes(Number(status));
+}
+
 function workItemTypePath(type) {
   const normalized = String(type || "").trim();
   if (!normalized) {
@@ -46,31 +54,43 @@ export function createTestPlansClient(config) {
   }
 
   async function requestJson(url, { method = "GET", headers = {}, body } = {}) {
-    const response = await fetch(url, {
-      method,
-      headers: {
-        Accept: "application/json",
-        ...(body ? { "Content-Type": "application/json" } : {}),
-        ...(authHeader ? { Authorization: authHeader } : {}),
-        ...headers,
-      },
-      body,
-    });
+    let attempt = 0;
 
-    const text = await response.text();
-    let data = {};
-    try {
-      data = text ? JSON.parse(text) : {};
-    } catch {
-      data = { raw: text };
-    }
+    while (attempt < 3) {
+      const response = await fetch(url, {
+        method,
+        headers: {
+          Accept: "application/json",
+          ...(body ? { "Content-Type": "application/json" } : {}),
+          ...(authHeader ? { Authorization: authHeader } : {}),
+          ...headers,
+        },
+        body,
+      });
 
-    if (!response.ok) {
+      const text = await response.text();
+      let data = {};
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch {
+        data = { raw: text };
+      }
+
+      if (response.ok) {
+        return data;
+      }
+
       const message = data?.message || data?.error || response.statusText || "Request failed";
+      if (isRetryableStatus(response.status) && attempt < 2) {
+        attempt += 1;
+        await delay(1000 * attempt);
+        continue;
+      }
+
       throw new Error(`Azure DevOps request failed (${response.status}): ${message}`);
     }
 
-    return data;
+    throw new Error("Azure DevOps request failed after retries.");
   }
 
   return {
