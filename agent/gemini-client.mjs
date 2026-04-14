@@ -62,6 +62,10 @@ function extractJsonText(text) {
   return cleaned;
 }
 
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function buildSchema(targetCaseCount = 1) {
   return {
     type: "object",
@@ -161,54 +165,66 @@ export function createGeminiClient(config) {
   }
 
   async function requestGemini(request = {}, repair = false) {
-    const prompt = buildPrompt(request, { repair });
-    const url = `${baseUrl}/models/${encodeURIComponent(model)}:generateContent`;
+    let attempt = 0;
 
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "x-goog-api-key": apiKey,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        contents: [
-          {
-            role: "user",
-            parts: [{ text: prompt }],
-          },
-        ],
-        generationConfig: {
-          responseMimeType: "application/json",
-          responseJsonSchema: buildSchema(request?.targetCaseCount),
-          temperature: 0.2,
-          maxOutputTokens: 4096,
+    while (attempt < 3) {
+      const prompt = buildPrompt(request, { repair });
+      const url = `${baseUrl}/models/${encodeURIComponent(model)}:generateContent`;
+
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "x-goog-api-key": apiKey,
+          "Content-Type": "application/json",
         },
-      }),
-    });
+        body: JSON.stringify({
+          contents: [
+            {
+              role: "user",
+              parts: [{ text: prompt }],
+            },
+          ],
+          generationConfig: {
+            responseMimeType: "application/json",
+            responseJsonSchema: buildSchema(request?.targetCaseCount),
+            temperature: 0.2,
+            maxOutputTokens: 4096,
+          },
+        }),
+      });
 
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      const message = payload?.error?.message || payload?.message || response.statusText || "Request failed";
-      throw new Error(`Gemini request failed (${response.status}): ${message}`);
-    }
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const message = payload?.error?.message || payload?.message || response.statusText || "Request failed";
+        const retryable = [429, 500, 503].includes(response.status);
+        if (retryable && attempt < 2) {
+          attempt += 1;
+          await delay(1000 * attempt);
+          continue;
+        }
 
-    const text = extractText(payload);
-    if (!text) {
-      throw new Error("Gemini returned no text output.");
-    }
-
-    let parsed;
-    try {
-      parsed = JSON.parse(extractJsonText(text));
-    } catch {
-      if (repair) {
-        throw new Error("Gemini returned invalid JSON output.");
+        throw new Error(`Gemini request failed (${response.status}): ${message}`);
       }
 
-      return requestGemini(request, true);
-    }
+      const text = extractText(payload);
+      if (!text) {
+        throw new Error("Gemini returned no text output.");
+      }
 
-    return parsed;
+      let parsed;
+      try {
+        parsed = JSON.parse(extractJsonText(text));
+      } catch {
+        if (repair) {
+          throw new Error("Gemini returned invalid JSON output.");
+        }
+
+        return requestGemini(request, true);
+      }
+
+      return parsed;
+    }
+    throw new Error("Gemini request failed after retries.");
   }
 
   return {
