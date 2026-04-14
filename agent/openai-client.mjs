@@ -25,7 +25,7 @@ function extractOutputText(response) {
   return chunks.join("\n").trim();
 }
 
-function buildSchema() {
+function buildSchema(targetCaseCount = 1) {
   return {
     type: "object",
     additionalProperties: false,
@@ -35,7 +35,7 @@ function buildSchema() {
       summary: { type: "string" },
       testCases: {
         type: "array",
-        minItems: 1,
+        minItems: Math.max(1, Number(targetCaseCount) || 1),
         maxItems: 8,
         items: {
           type: "object",
@@ -78,6 +78,7 @@ export function createOpenAIClient(config) {
   function buildPrompt(request) {
     const kind = String(request?.kind || "story").trim().toLowerCase();
     const content = request?.content ?? request;
+    const targetCaseCount = Math.max(1, Number(request?.targetCaseCount) || 1);
     const baseInstructions =
       Array.isArray(request?.instructions) && request.instructions.length
         ? request.instructions.map((item) => String(item).trim()).filter(Boolean)
@@ -87,6 +88,7 @@ export function createOpenAIClient(config) {
               "Generate the most useful manual test cases for the website brief below.",
               "Think like a test designer: include navigation, form, negative, boundary, and integration coverage when relevant.",
               "Prioritize the discovered user journeys and feature candidates.",
+              `Generate at least ${targetCaseCount} distinct test cases if the website surface supports it.`,
               "Do not write implementation details.",
               "Use concise but complete steps.",
               "Return only structured JSON that matches the provided schema.",
@@ -95,6 +97,7 @@ export function createOpenAIClient(config) {
               "You are a senior QA lead.",
               "Generate the most useful manual test cases for the Azure DevOps User Story below.",
               "Think like a test designer: include happy path, negative, boundary, and integration coverage when relevant.",
+              `Generate at least ${targetCaseCount} distinct test cases if the story has enough acceptance criteria or scenarios.`,
               "Do not write implementation details.",
               "Use concise but complete steps.",
               "Return only structured JSON that matches the provided schema.",
@@ -129,7 +132,7 @@ export function createOpenAIClient(config) {
             type: "json_schema",
             name: "trip_budget_test_cases",
             strict: true,
-            schema: buildSchema(),
+            schema: buildSchema(request?.targetCaseCount),
           },
         },
       }),

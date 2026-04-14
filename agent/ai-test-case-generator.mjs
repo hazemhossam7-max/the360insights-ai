@@ -88,12 +88,28 @@ function resolveAiProvider(options) {
   return "openai";
 }
 
+function resolveTargetCaseCount(content, kind) {
+  if (kind === "website") {
+    const featureCount = Array.isArray(content?.featureCandidates) ? content.featureCandidates.length : 0;
+    const pageCount = Array.isArray(content?.pages) ? content.pages.length : 0;
+    return Math.max(5, Math.min(8, 3 + featureCount + pageCount));
+  }
+
+  const acceptanceCriteria = String(content?.acceptanceCriteria || content?.description || "")
+    .split(/\r?\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean).length;
+
+  return Math.max(3, Math.min(8, acceptanceCriteria || 3));
+}
+
 async function generateWithModel(content, options, kind, fallbackFactory) {
   const provider = resolveAiProvider(options);
   const heuristicFallbackEnabled = isTruthyFlag(
     options.allowHeuristicFallback ?? process.env.ALLOW_HEURISTIC_FALLBACK ?? ""
   );
   const fallback = fallbackFactory();
+  const targetCaseCount = resolveTargetCaseCount(content, kind);
 
   try {
     const client =
@@ -102,14 +118,16 @@ async function generateWithModel(content, options, kind, fallbackFactory) {
             apiKey: options.geminiApiKey || process.env.GEMINI_API_KEY,
             model: options.geminiModel || process.env.GEMINI_MODEL || "gemini-2.5-flash",
             baseUrl: options.geminiBaseUrl || process.env.GEMINI_BASE_URL,
+            targetCaseCount,
           })
         : createOpenAIClient({
             apiKey: options.apiKey || process.env.OPENAI_API_KEY,
             model: options.model || process.env.OPENAI_MODEL || "gpt-4o-mini",
             baseUrl: options.baseUrl || process.env.OPENAI_BASE_URL,
+            targetCaseCount,
           });
 
-    const result = await client.createResponse({ kind, content });
+    const result = await client.createResponse({ kind, content, targetCaseCount });
     if (provider === "gemini") {
       return kind === "website"
         ? normalizeWebsiteResult(content, result, "gemini")
