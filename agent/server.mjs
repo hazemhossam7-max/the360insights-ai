@@ -350,7 +350,7 @@ async function processWebsiteUrl(url, config) {
     geminiApiKey: config.geminiApiKey,
     geminiModel: config.geminiModel,
     geminiBaseUrl: config.geminiBaseUrl,
-    allowHeuristicFallback: config.allowHeuristicFallback,
+    allowHeuristicFallback: true,
   });
 
   console.log(

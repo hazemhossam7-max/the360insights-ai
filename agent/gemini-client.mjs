@@ -16,6 +16,39 @@ function extractText(response) {
   return chunks.join("\n").trim();
 }
 
+function stripCodeFences(text) {
+  return String(text || "")
+    .trim()
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .trim();
+}
+
+function extractJsonText(text) {
+  const cleaned = stripCodeFences(text);
+  if (!cleaned) {
+    return "";
+  }
+
+  if (cleaned.startsWith("{") || cleaned.startsWith("[")) {
+    return cleaned;
+  }
+
+  const firstObject = cleaned.indexOf("{");
+  const lastObject = cleaned.lastIndexOf("}");
+  if (firstObject !== -1 && lastObject !== -1 && lastObject > firstObject) {
+    return cleaned.slice(firstObject, lastObject + 1).trim();
+  }
+
+  const firstArray = cleaned.indexOf("[");
+  const lastArray = cleaned.lastIndexOf("]");
+  if (firstArray !== -1 && lastArray !== -1 && lastArray > firstArray) {
+    return cleaned.slice(firstArray, lastArray + 1).trim();
+  }
+
+  return cleaned;
+}
+
 function buildSchema() {
   return {
     type: "object",
@@ -140,7 +173,7 @@ export function createGeminiClient(config) {
 
     let parsed;
     try {
-      parsed = JSON.parse(text);
+      parsed = JSON.parse(extractJsonText(text));
     } catch {
       throw new Error("Gemini returned invalid JSON output.");
     }
