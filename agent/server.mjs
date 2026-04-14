@@ -2,6 +2,7 @@ import http from "node:http";
 import { createAzureDevOpsClient, resolveWorkItemId } from "./azure-devops-client.mjs";
 import { analyzeWebsite } from "./website-analyzer.mjs";
 import { generateTestCasesForStory, generateTestCasesForWebsite } from "./ai-test-case-generator.mjs";
+import { generateTestCaseDrafts as generateHeuristicTestCaseDrafts } from "./story-to-tests.mjs";
 import { createTestPlansClient } from "./testplans-client.mjs";
 
 const PORT = Number(process.env.PORT || 3000);
@@ -342,16 +343,26 @@ async function processWebsiteUrl(url, config) {
     `[website] analyzed ${websiteBrief.pages.length} page(s) and ${websiteBrief.featureCandidates.length} feature candidate(s)`
   );
 
-  const testCaseDrafts = await generateTestCasesForWebsite(websiteBrief, {
-    provider: config.aiProvider,
-    apiKey: config.openAiApiKey,
-    model: config.openAiModel,
-    baseUrl: config.openAiBaseUrl,
-    geminiApiKey: config.geminiApiKey,
-    geminiModel: config.geminiModel,
-    geminiBaseUrl: config.geminiBaseUrl,
-    allowHeuristicFallback: true,
-  });
+  let testCaseDrafts;
+  try {
+    testCaseDrafts = await generateTestCasesForWebsite(websiteBrief, {
+      provider: config.aiProvider,
+      apiKey: config.openAiApiKey,
+      model: config.openAiModel,
+      baseUrl: config.openAiBaseUrl,
+      geminiApiKey: config.geminiApiKey,
+      geminiModel: config.geminiModel,
+      geminiBaseUrl: config.geminiBaseUrl,
+      allowHeuristicFallback: true,
+    });
+  } catch (error) {
+    console.warn(
+      `[website] AI generation failed for ${url}, falling back to heuristic generator: ${error.message}`
+    );
+    testCaseDrafts = generateHeuristicTestCaseDrafts(websiteBrief);
+    testCaseDrafts.generationSource = "heuristic";
+    testCaseDrafts.generationNotes = error.message;
+  }
 
   console.log(
     `[website] generated ${testCaseDrafts.testCases.length} test case(s) using ${testCaseDrafts.generationSource}`
