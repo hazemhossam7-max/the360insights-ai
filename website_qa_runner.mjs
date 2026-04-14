@@ -448,6 +448,36 @@ async function runGeneratedCase(page, websiteBrief, testCase, index) {
   }
 }
 
+async function generateWebsiteDrafts(websiteBrief, aiProvider, geminiApiKey) {
+  const sharedOptions = {
+    provider: aiProvider || "gemini",
+    geminiApiKey,
+    geminiModel: process.env.GEMINI_MODEL || "gemini-2.5-flash",
+    geminiBaseUrl: process.env.GEMINI_BASE_URL || "",
+  };
+
+  try {
+    return await generateTestCasesForWebsite(websiteBrief, {
+      ...sharedOptions,
+      allowHeuristicFallback: "false",
+    });
+  } catch (error) {
+    const message = String(error?.message || error);
+    const isGeminiProvider = String(aiProvider || "gemini").trim().toLowerCase() === "gemini";
+    const isGeminiFailure = /Gemini (generation|request) failed/i.test(message);
+
+    if (!isGeminiProvider || !isGeminiFailure) {
+      throw error;
+    }
+
+    console.warn(`[website] Gemini generation failed, falling back to heuristic website generation: ${message}`);
+    return generateTestCasesForWebsite(websiteBrief, {
+      ...sharedOptions,
+      allowHeuristicFallback: "true",
+    });
+  }
+}
+
 async function main() {
   const rawUrl = String(process.argv[2] || process.env.WEBSITE_URL || "").trim();
   if (!rawUrl) {
@@ -465,13 +495,7 @@ async function main() {
   await fs.mkdir(bugDir, { recursive: true });
 
   const websiteBrief = await analyzeWebsite(websiteUrl);
-  const testCaseDrafts = await generateTestCasesForWebsite(websiteBrief, {
-    provider: aiProvider || "gemini",
-    geminiApiKey,
-    geminiModel: process.env.GEMINI_MODEL || "gemini-2.5-flash",
-    geminiBaseUrl: process.env.GEMINI_BASE_URL || "",
-    allowHeuristicFallback: process.env.ALLOW_HEURISTIC_FALLBACK || "false",
-  });
+  const testCaseDrafts = await generateWebsiteDrafts(websiteBrief, aiProvider, geminiApiKey);
 
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage({ viewport: { width: 1440, height: 1200 } });
