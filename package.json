@@ -9,7 +9,8 @@
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",
     "test:e2e:legacy": "node qa_runner.mjs",
-    "test:website:auto": "node website_qa_runner.mjs"
+    "test:website:auto": "node website_qa_runner.mjs",
+    "migrate:test-cases": "node scripts/migrate-test-cases-to-steps.mjs"
   },
   "dependencies": {
     "playwright": "^1.54.2"

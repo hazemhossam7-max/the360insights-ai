@@ -1,3 +1,5 @@
+import { buildTestCaseStepsXml } from "./testcase-steps.mjs";
+
 function trimTrailingSlash(value) {
   return String(value || "").replace(/\/+$/, "");
 }
@@ -25,16 +27,26 @@ function workItemTypePath(type) {
   return `$${encodeURIComponent(normalized)}`;
 }
 
-function buildTestCaseDescription(testCaseDraft) {
-  const steps = Array.isArray(testCaseDraft?.steps) ? testCaseDraft.steps : [];
-  const lines = [
-    "Steps:",
-    ...(steps.length
-      ? steps.map((item, index) => `${index + 1}. ${String(item || "").trim()}`)
-      : ["1. Open the app and validate the user story flow."]),
-  ];
+function buildTestCaseSteps(testCaseDraft) {
+  return buildTestCaseStepsXml(testCaseDraft?.steps || [], testCaseDraft?.expectedResult || "");
+}
 
-  return lines.join("\n").trim();
+function normalizeSuiteTestCase(item) {
+  const testCase = item?.testCase || item?.workItem || {};
+  const id = Number(testCase?.id || item?.id || item?.testCaseId);
+  if (!Number.isFinite(id) || id <= 0) {
+    return null;
+  }
+
+  return {
+    id,
+    title: String(testCase?.name || testCase?.title || item?.title || "").trim(),
+    workItemId: Number(testCase?.workItemId || item?.workItemId || id),
+    pointId: Number(item?.pointId || item?.id || id),
+    configurationId: Number(item?.configurationId || 0) || null,
+    suiteId: Number(item?.suiteId || 0) || null,
+    raw: item,
+  };
 }
 
 export function createTestPlansClient(config) {
@@ -49,7 +61,7 @@ export function createTestPlansClient(config) {
     throw new Error("AZDO_PROJECT is required.");
   }
 
-  async function requestJson(url, { method = "GET", headers = {}, body } = {}) {
+  async function requestJsonWithMeta(url, { method = "GET", headers = {}, body } = {}) {
     let attempt = 0;
 
     while (attempt < 3) {
@@ -73,7 +85,7 @@ export function createTestPlansClient(config) {
       }
 
       if (response.ok) {
-        return data;
+        return { data, response };
       }
 
       const message = data?.message || data?.error || response.statusText || "Request failed";
@@ -89,6 +101,11 @@ export function createTestPlansClient(config) {
     throw new Error("Azure DevOps request failed after retries.");
   }
 
+  async function requestJson(url, options = {}) {
+    const { data } = await requestJsonWithMeta(url, options);
+    return data;
+  }
+
   return {
     async getTestPlan(planId) {
       const url = new URL(
@@ -97,6 +114,37 @@ export function createTestPlansClient(config) {
       url.searchParams.set("api-version", "7.1");
 
       return requestJson(url.toString());
+    },
+
+    async getSuiteTestCases({ planId, suiteId, isRecursive = true, continuationToken = "" }) {
+      const url = new URL(
+        `${orgUrl}/${encodeURIComponent(project)}/_apis/test/Plans/${encodeURIComponent(planId)}/suites/${encodeURIComponent(suiteId)}/testcases`
+      );
+      url.searchParams.set("api-version", "7.1");
+      if (isRecursive) {
+        url.searchParams.set("isRecursive", "true");
+      }
+      if (continuationToken) {
+        url.searchParams.set("continuationToken", String(continuationToken));
+      }
+
+      const { data, response } = await requestJsonWithMeta(url.toString());
+      const items = Array.isArray(data)
+        ? data
+        : Array.isArray(data?.value)
+          ? data.value
+          : Array.isArray(data?.testCases)
+            ? data.testCases
+            : [];
+
+      return {
+        testCases: items.map(normalizeSuiteTestCase).filter(Boolean),
+        continuationToken:
+          data?.continuationToken ??
+          data?.continuationToken?.toString?.() ??
+          response?.headers?.get?.("x-ms-continuationtoken") ??
+          null,
+      };
     },
 
     async createTestSuite({ planId, parentSuiteId, name }) {
@@ -128,6 +176,37 @@ export function createTestPlansClient(config) {
       };
     },
 
+    async updateTestCaseWorkItem(testCaseId, testCaseDraft) {
+      const id = Number(testCaseId);
+      if (!Number.isFinite(id) || id <= 0) {
+        throw new Error("A valid test case id is required.");
+      }
+
+      const url = new URL(`${orgUrl}/${encodeURIComponent(project)}/_apis/wit/workitems/${encodeURIComponent(id)}`);
+      url.searchParams.set("api-version", "7.1");
+
+      const patchDocument = [
+        { op: "add", path: "/fields/System.Title", value: testCaseDraft.title },
+        { op: "add", path: "/fields/System.Description", value: "" },
+        { op: "add", path: "/fields/Microsoft.VSTS.TCM.Steps", value: buildTestCaseSteps(testCaseDraft) },
+      ];
+
+      const updated = await requestJson(url.toString(), {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json-patch+json",
+        },
+        body: JSON.stringify(patchDocument),
+      });
+
+      return {
+        id: Number(updated.id),
+        url: updated.url || "",
+        rev: updated.rev || null,
+        title: updated.fields?.["System.Title"] || testCaseDraft.title,
+      };
+    },
+
     async createTestCaseWorkItem(testCaseDraft) {
       const url = new URL(
         `${orgUrl}/${encodeURIComponent(project)}/_apis/wit/workitems/${workItemTypePath("Test Case")}`
@@ -136,7 +215,8 @@ export function createTestPlansClient(config) {
 
       const patchDocument = [
         { op: "add", path: "/fields/System.Title", value: testCaseDraft.title },
-        { op: "add", path: "/fields/System.Description", value: buildTestCaseDescription(testCaseDraft) },
+        { op: "add", path: "/fields/System.Description", value: "" },
+        { op: "add", path: "/fields/Microsoft.VSTS.TCM.Steps", value: buildTestCaseSteps(testCaseDraft) },
         { op: "add", path: "/fields/System.Tags", value: "GeneratedBy=TripBudgetAgent" },
       ];
 

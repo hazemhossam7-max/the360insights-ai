@@ -81,6 +81,10 @@ function resolveAiProvider(options) {
     return explicit;
   }
 
+  if (String(options.apiKey || process.env.OPENAI_API_KEY || "").trim()) {
+    return "openai";
+  }
+
   if (String(options.geminiApiKey || process.env.GEMINI_API_KEY || "").trim()) {
     return "gemini";
   }

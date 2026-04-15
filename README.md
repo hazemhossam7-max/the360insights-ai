@@ -189,9 +189,17 @@ npm run test:website:auto -- https://example.com
 The generated website automation runner:
 
 - analyzes the target website
-- asks Gemini for coverage
+- asks OpenAI for coverage by default when `OPENAI_API_KEY` is set
 - executes the generated checks in Playwright
 - writes a JSON summary to `bug_reports/latest_website_automation.json`
+
+Rewrite existing Azure DevOps test cases from summary text into Steps-only test cases:
+
+```bash
+npm run migrate:test-cases
+```
+
+That script uses your Azure DevOps PAT to update the existing cases in place.
 
 ## Azure DevOps Agent
 
@@ -201,8 +209,8 @@ That service:
 
 - receives Azure DevOps service-hook events
 - fetches the full User Story from Azure DevOps
-- generates draft test cases from the story text with Gemini when `GEMINI_API_KEY` is set
-- falls back to OpenAI if only `OPENAI_API_KEY` is configured
+- generates draft test cases from the story text with OpenAI when `OPENAI_API_KEY` is set
+- falls back to Gemini if only `GEMINI_API_KEY` is configured
 - can optionally fall back to a rule-based generator if `ALLOW_HEURISTIC_FALLBACK=true`
 - can also inspect a website URL and generate test cases from the observed pages and features
 
@@ -217,16 +225,16 @@ The agent expects these environment variables:
 - `AZDO_ORG_URL`
 - `AZDO_PROJECT`
 - `AZDO_PAT`
-- `GEMINI_API_KEY` preferred for AI-driven test generation
+- `OPENAI_API_KEY` preferred for AI-driven test generation and website automation
+- `OPENAI_MODEL` and `OPENAI_BASE_URL` if you want to override the defaults
+- `GEMINI_API_KEY` still supported if you want to keep using Gemini
 - `GEMINI_MODEL` optional, defaults to `gemini-2.5-flash`
 - `AI_PROVIDER` optional, set to `gemini` or `openai` to force a provider
-- `OPENAI_API_KEY` still supported if you want to keep using OpenAI
-- `OPENAI_MODEL` and `OPENAI_BASE_URL` if you want to override the defaults
 - `AZDO_TEST_PLAN_ID` and `AZDO_TEST_SUITE_ID` if you want the agent to upload test cases into Azure Test Plans
 
 The agent also exposes `GET /inspect-url?url=https://example.com` and `POST /inspect-url` for website analysis. It crawls the site, summarizes visible pages and features, and then generates and uploads test cases the same way it does for user stories.
 
-If you want the generated website coverage to run automatically in Azure Pipelines, pass the `websiteUrl` pipeline parameter when you click **Run pipeline** and provide `GEMINI_API_KEY` as a secret pipeline variable. The pipeline can then call `website_qa_runner.mjs` and execute the AI-generated coverage in Playwright.
+If you want the generated website coverage to run automatically in Azure Pipelines, pass the `websiteUrl` pipeline parameter when you click **Run pipeline** and provide `OPENAI_API_KEY` as a secret pipeline variable. The pipeline can then call `website_qa_runner.mjs` and execute the AI-generated coverage in Playwright.
 
 If your App Service is on a Free or Shared tier and `Always On` is unavailable, the repo includes a keep-alive GitHub Action in `.github/workflows/keepalive-trip-budget-agent.yml` that pings the `/health` endpoint every 15 minutes to reduce cold-start delays.
 

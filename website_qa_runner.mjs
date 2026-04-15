@@ -489,34 +489,21 @@ async function runGeneratedCase(page, websiteBrief, testCase, index) {
   }
 }
 
-async function generateWebsiteDrafts(websiteBrief, aiProvider, geminiApiKey) {
+async function generateWebsiteDrafts(websiteBrief, options) {
   const sharedOptions = {
-    provider: aiProvider || "gemini",
-    geminiApiKey,
-    geminiModel: process.env.GEMINI_MODEL || "gemini-2.5-flash",
-    geminiBaseUrl: process.env.GEMINI_BASE_URL || "",
+    provider: options.provider || "openai",
+    apiKey: options.openAiApiKey,
+    model: options.openAiModel || "gpt-4o-mini",
+    baseUrl: options.openAiBaseUrl || "",
+    geminiApiKey: options.geminiApiKey || "",
+    geminiModel: options.geminiModel || "",
+    geminiBaseUrl: options.geminiBaseUrl || "",
   };
 
-  try {
-    return await generateTestCasesForWebsite(websiteBrief, {
-      ...sharedOptions,
-      allowHeuristicFallback: "false",
-    });
-  } catch (error) {
-    const message = String(error?.message || error);
-    const isGeminiProvider = String(aiProvider || "gemini").trim().toLowerCase() === "gemini";
-    const isGeminiFailure = /Gemini (generation|request) failed/i.test(message);
-
-    if (!isGeminiProvider || !isGeminiFailure) {
-      throw error;
-    }
-
-    console.warn(`[website] Gemini generation failed, falling back to heuristic website generation: ${message}`);
-    return generateTestCasesForWebsite(websiteBrief, {
-      ...sharedOptions,
-      allowHeuristicFallback: "true",
-    });
-  }
+  return generateTestCasesForWebsite(websiteBrief, {
+    ...sharedOptions,
+    allowHeuristicFallback: "true",
+  });
 }
 
 async function main() {
@@ -526,17 +513,38 @@ async function main() {
   }
 
   const websiteUrl = /^https?:\/\//i.test(rawUrl) ? rawUrl : `https://${rawUrl}`;
-  const aiProvider = String(process.env.AI_PROVIDER || "gemini").trim().toLowerCase();
+  const aiProvider = String(process.env.AI_PROVIDER || "").trim().toLowerCase();
+  const openAiApiKey = String(process.env.OPENAI_API_KEY || "").trim();
+  const openAiModel = String(process.env.OPENAI_MODEL || "").trim();
+  const openAiBaseUrl = String(process.env.OPENAI_BASE_URL || "").trim();
   const geminiApiKey = String(process.env.GEMINI_API_KEY || "").trim();
+  const geminiModel = String(process.env.GEMINI_MODEL || "").trim();
+  const geminiBaseUrl = String(process.env.GEMINI_BASE_URL || "").trim();
+  const provider = aiProvider === "gemini" || aiProvider === "openai"
+    ? aiProvider
+    : openAiApiKey
+      ? "openai"
+      : "gemini";
 
-  if (!geminiApiKey) {
+  if (provider === "openai" && !openAiApiKey) {
+    throw new Error("OPENAI_API_KEY is required for automated website generation.");
+  }
+  if (provider === "gemini" && !geminiApiKey) {
     throw new Error("GEMINI_API_KEY is required for automated website generation.");
   }
 
   await fs.mkdir(bugDir, { recursive: true });
 
   const websiteBrief = await analyzeWebsite(websiteUrl);
-  const testCaseDrafts = await generateWebsiteDrafts(websiteBrief, aiProvider, geminiApiKey);
+  const testCaseDrafts = await generateWebsiteDrafts(websiteBrief, {
+    provider,
+    openAiApiKey,
+    openAiModel,
+    openAiBaseUrl,
+    geminiApiKey,
+    geminiModel,
+    geminiBaseUrl,
+  });
 
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage({ viewport: { width: 1440, height: 1200 } });
@@ -583,7 +591,7 @@ ${error.message}
 
   const summary = {
     websiteUrl: websiteBrief.url,
-    aiProvider: aiProvider || "gemini",
+    aiProvider: provider,
     generationSource: testCaseDrafts.generationSource,
     total: testCaseDrafts.testCases.length,
     passed: results.filter((item) => item.status === "passed").length,

@@ -302,12 +302,17 @@ async function processWebhook(payload, workItemId, client, config) {
   }
 
   console.log(`[webhook] processing work item: ${workItem.id} - ${workItem.title}`);
+  const explicitProvider = String(config.aiProvider || "").trim().toLowerCase();
   const aiProvider =
-    String(config.aiProvider || "").trim().toLowerCase() === "openai"
+    explicitProvider === "openai"
       ? "OpenAI"
-      : String(config.aiProvider || "").trim().toLowerCase() === "gemini" || config.geminiApiKey
+      : explicitProvider === "gemini"
         ? "Gemini"
-        : "OpenAI";
+        : config.openAiApiKey
+          ? "OpenAI"
+          : config.geminiApiKey
+            ? "Gemini"
+            : "OpenAI";
   const aiModel =
     aiProvider === "Gemini"
       ? config.geminiModel || "gemini-2.5-flash"

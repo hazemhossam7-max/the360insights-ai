@@ -39,10 +39,13 @@ steps:
   - script: node website_qa_runner.mjs "${{ parameters.websiteUrl }}"
     displayName: "Run AI-generated website automation"
     env:
+      OPENAI_API_KEY: $(OPENAI_API_KEY)
+      OPENAI_MODEL: $(OPENAI_MODEL)
+      OPENAI_BASE_URL: $(OPENAI_BASE_URL)
+      AI_PROVIDER: openai
       GEMINI_API_KEY: $(GEMINI_API_KEY)
       GEMINI_MODEL: $(GEMINI_MODEL)
       GEMINI_BASE_URL: $(GEMINI_BASE_URL)
-      AI_PROVIDER: gemini
 
 - task: PublishTestResults@2
   displayName: "Publish JUnit test results"

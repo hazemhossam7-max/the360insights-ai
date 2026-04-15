@@ -30,6 +30,7 @@ function normalizeFields(fields = {}) {
     state: String(fields["System.State"] || "").trim(),
     areaPath: String(fields["System.AreaPath"] || "").trim(),
     iterationPath: String(fields["System.IterationPath"] || "").trim(),
+    stepsHtml: String(fields["Microsoft.VSTS.TCM.Steps"] || "").trim(),
   };
 }
 
