@@ -26,16 +26,12 @@ function workItemTypePath(type) {
 }
 
 function buildTestCaseDescription(testCaseDraft) {
+  const steps = Array.isArray(testCaseDraft?.steps) ? testCaseDraft.steps : [];
   const lines = [
-    `Source criterion: ${testCaseDraft.sourceCriterion || testCaseDraft.expectedResult || ""}`,
-    "",
-    "Preconditions:",
-    ...(testCaseDraft.preconditions || []).map((item) => `- ${item}`),
-    "",
     "Steps:",
-    ...(testCaseDraft.steps || []).map((item, index) => `${index + 1}. ${item}`),
-    "",
-    `Expected result: ${testCaseDraft.expectedResult || ""}`,
+    ...(steps.length
+      ? steps.map((item, index) => `${index + 1}. ${String(item || "").trim()}`)
+      : ["1. Open the app and validate the user story flow."]),
   ];
 
   return lines.join("\n").trim();
