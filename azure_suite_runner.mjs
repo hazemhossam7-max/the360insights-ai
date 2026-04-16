@@ -200,7 +200,7 @@ function combineCaseText(testCase) {
 function inferCaseKind(testCase, index) {
   const text = combineCaseText(testCase);
 
-  if (index === 0 || /home page|landing page|branding|planner page/.test(text)) {
+  if (index === 0 || /home page|landing page|branding|overview page|website page/.test(text)) {
     return "home";
   }
   if (/history\s+filter|filter.*history|style filter/.test(text)) {
@@ -266,7 +266,7 @@ async function verifySaveFlow(page, baseUrl, text) {
   const trip = chooseSampleTrip(text);
   await saveTripThroughUi(page, trip, baseUrl);
   await page.goto(`${baseUrl}/history`, { waitUntil: "domcontentloaded" });
-  await assert((await getText(page, "#history-list")).includes(trip.tripName), "Saved trip missing from history.");
+      await assert((await getText(page, "#history-list")).includes(trip.tripName), "Saved run missing from history.");
 }
 
 async function verifyHistoryFilter(page, baseUrl) {

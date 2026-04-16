@@ -44,7 +44,7 @@
       document.getElementById("stat-total-budget-sum").textContent = formatMoney(stats.totalBudgetSum);
     } catch (error) {
       emptyState.classList.remove("hidden");
-      emptyState.textContent = "Insights are unavailable right now. Please try again.";
+      emptyState.textContent = "Run insights are unavailable right now. Please try again.";
       content.classList.add("hidden");
     }
   }

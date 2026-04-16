@@ -1,8 +1,8 @@
 {
-  "name": "trip-budget-planner",
+  "name": "the360insights-ai",
   "version": "2.0.0",
   "private": true,
-  "description": "Multi-page trip budget planner with backend persistence and browser QA automation.",
+  "description": "Website automation and QA tooling for The360 Insights.",
   "scripts": {
     "serve": "node server.js",
     "agent:serve": "node agent/server.mjs",

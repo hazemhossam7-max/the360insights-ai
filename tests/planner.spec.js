@@ -6,7 +6,7 @@ const {
   planTrip,
 } = require("./helpers");
 
-test.describe("Planner flows", () => {
+test.describe("Website QA flows", () => {
   test.beforeEach(async ({ request, baseURL }) => {
     await clearTrips(request, baseURL);
   });
@@ -19,16 +19,16 @@ test.describe("Planner flows", () => {
     expect(body).toContain("planner.js");
   });
 
-  test("TC-001: home page loads with planner and navigation", async ({ page, baseURL }) => {
+  test("TC-001: overview page loads with navigation", async ({ page, baseURL }) => {
     await page.goto(baseURL, { waitUntil: "domcontentloaded" });
 
-    await expect(page.getByRole("heading", { name: /Plan it, save it, compare it./i })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /Inspect it, validate it, compare it./i })).toBeVisible();
     await expect(page.locator("#budget-form")).toBeVisible();
     await expect(page.getByRole("link", { name: "History" })).toBeVisible();
     await expect(page.getByRole("link", { name: "Compare" })).toBeVisible();
   });
 
-  test("TC-002: valid trip plan calculates summary and enables save", async ({ page, baseURL }) => {
+  test("TC-002: valid website input calculates summary and enables save", async ({ page, baseURL }) => {
     await planTrip(page, sampleTrips.balanced, baseURL);
 
     await expect(page.locator("#results-content")).toBeVisible();

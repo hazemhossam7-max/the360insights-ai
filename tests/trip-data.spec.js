@@ -47,13 +47,13 @@ test.describe("History, insights, and compare flows", () => {
     await expect(page.locator("#history-empty-state")).toBeVisible();
   });
 
-  test("TC-014: insights page returns to empty state after clearing trips", async ({ page, request, baseURL }) => {
+  test("TC-014: insights page returns to empty state after clearing runs", async ({ page, request, baseURL }) => {
     await seedTrips(request, baseURL, [sampleTrips.balanced]);
     await page.goto(`${baseURL}/history`, { waitUntil: "domcontentloaded" });
     await page.click("#clear-trips-button");
 
     await expect(page.locator("#history-empty-state")).toHaveText(
-      "No saved trips yet. Save a plan from the Planner page."
+      "No saved runs yet. Save a run from the Overview page."
     );
     await page.goto(`${baseURL}/insights`, { waitUntil: "domcontentloaded" });
 
@@ -66,7 +66,7 @@ test.describe("History, insights, and compare flows", () => {
     await expect(page.locator("#history-list")).toContainText("Cairo Escape");
   });
 
-  test("TC-016: compare page shows saved trips and best-value spotlight", async ({ page, request, baseURL }) => {
+  test("TC-016: compare page shows saved runs and best-value spotlight", async ({ page, request, baseURL }) => {
     await seedTrips(request, baseURL, [sampleTrips.balanced, sampleTrips.shoestring]);
     await page.goto(`${baseURL}/compare`, { waitUntil: "domcontentloaded" });
 

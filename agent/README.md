@@ -1,9 +1,9 @@
-# Trip Budget Agent
+# The360 Insights AI Agent
 
 This folder contains the Azure DevOps webhook service that will:
 
 1. receive work-item webhook events
-2. fetch the full User Story from Azure DevOps
+2. fetch the full story or website context from Azure DevOps
 3. generate a draft set of test cases from the story text or from a website crawl
 4. migrate existing Azure DevOps test cases from summary-style descriptions into step-based test cases
 
@@ -17,7 +17,7 @@ npm start
 ## Required environment variables
 
 - `AZDO_ORG_URL` - for example `https://dev.azure.com/your-org`
-- `AZDO_PROJECT` - for example `trip-budget-planner`
+- `AZDO_PROJECT` - for example `the360insights-ai`
 - `AZDO_PAT` - a token with permission to read work items
 - `OPENAI_API_KEY` - preferred for AI-based test generation and website automation
 - `OPENAI_MODEL` - optional, defaults to `gpt-4o-mini`

@@ -235,7 +235,7 @@ async function fetchPage(url, timeoutMs) {
     const response = await fetch(url, {
       signal: controller.signal,
       headers: {
-        "User-Agent": "TripBudgetAgent/1.0 (+https://github.com/hazemhossam7-max/trip-budget-planner)",
+        "User-Agent": "The360InsightsQA/1.0 (+https://the360insights.ai/)",
         Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
       },
     });

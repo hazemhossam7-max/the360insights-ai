@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Trip Budget Planner</title>
+    <title>The360 Insights AI QA</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -15,9 +15,9 @@
   <body class="page-planner">
     <main class="page-shell">
       <header class="topbar">
-        <a class="brand" href="./index.html">Trip Budget Planner</a>
+        <a class="brand" href="./index.html">The360 Insights AI QA</a>
         <nav class="nav-links" aria-label="Primary">
-          <a href="./index.html" class="active">Planner</a>
+          <a href="./index.html" class="active">Overview</a>
           <a href="./history.html">History</a>
           <a href="./insights.html">Insights</a>
           <a href="./compare.html">Compare</a>
@@ -27,16 +27,16 @@
       <div id="runtime-notice" class="runtime-notice hidden"></div>
 
       <section class="hero">
-        <p class="eyebrow">Persistent travel planning</p>
-        <h1>Plan it, save it, compare it.</h1>
+        <p class="eyebrow">Website automation</p>
+        <h1>Inspect it, validate it, compare it.</h1>
         <p class="hero-copy">
-          Build a trip budget, store it in the backend, and review travel history
-          and portfolio-level insights across multiple trips.
+          Point the runner at a live website, capture useful signals, and keep results
+          in sync with Azure DevOps.
         </p>
         <div class="hero-badges">
-          <span class="chip muted">Fast planning</span>
-          <span class="chip muted">Saved history</span>
-          <span class="chip muted">Side-by-side compare</span>
+          <span class="chip muted">URL crawl</span>
+          <span class="chip muted">OpenAI generation</span>
+          <span class="chip muted">Suite execution</span>
         </div>
       </section>
 
@@ -44,8 +44,8 @@
         <div class="planner-grid">
           <form id="budget-form" novalidate>
             <div class="form-header">
-              <h2>Planner Inputs</h2>
-              <p>Generate a trip snapshot first, then save it to your travel log.</p>
+              <h2>Automation Inputs</h2>
+              <p>Capture a website snapshot first, then save it to your automation log.</p>
             </div>
 
             <div class="field-group">
@@ -98,8 +98,8 @@
             </div>
 
             <div class="action-row action-row-wide">
-              <button type="submit" class="primary-button">Plan My Budget</button>
-              <button type="button" class="accent-button" id="save-button" disabled>Save Trip</button>
+              <button type="submit" class="primary-button">Generate Snapshot</button>
+              <button type="button" class="accent-button" id="save-button" disabled>Save Run</button>
               <button type="button" class="secondary-button" id="reset-button">Reset</button>
             </div>
 
@@ -113,7 +113,7 @@
             </div>
 
             <div id="empty-state" class="empty-state">
-              Fill out the planner to generate your travel budget snapshot.
+              Fill out the overview form to generate your automation snapshot.
             </div>
 
             <div id="results-content" class="results-content hidden">

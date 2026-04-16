@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Trip Insights</title>
+    <title>Run Insights</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -15,9 +15,9 @@
   <body class="page-insights">
     <main class="page-shell">
       <header class="topbar">
-        <a class="brand" href="./index.html">Trip Budget Planner</a>
+        <a class="brand" href="./index.html">The360 Insights AI QA</a>
         <nav class="nav-links" aria-label="Primary">
-          <a href="./index.html">Planner</a>
+          <a href="./index.html">Overview</a>
           <a href="./history.html">History</a>
           <a href="./insights.html" class="active">Insights</a>
           <a href="./compare.html">Compare</a>
@@ -28,18 +28,18 @@
 
       <section class="page-intro">
         <p class="eyebrow">Portfolio view</p>
-        <h1>Trip insights</h1>
-        <p>Track how your saved trips compare at a glance and spot budgets that are too optimistic.</p>
+        <h1>Run insights</h1>
+        <p>Track how your saved runs compare at a glance and spot items that look too optimistic.</p>
       </section>
 
       <section class="section-card">
         <div class="card-inner">
-          <div id="insights-empty-state" class="empty-state">No saved trips yet. Insights will appear after you save at least one trip.</div>
+          <div id="insights-empty-state" class="empty-state">No saved runs yet. Insights will appear after you save at least one run.</div>
 
           <div id="insights-content" class="hidden">
             <div class="stats-grid">
               <article class="stat-card">
-                <span>Total trips</span>
+                <span>Total runs</span>
                 <strong id="stat-total-trips">0</strong>
               </article>
               <article class="stat-card">
@@ -57,8 +57,8 @@
             </div>
 
             <ul class="highlights-list" id="highlights-list">
-              <li><strong id="stat-too-tight-count">0</strong> trip(s) are marked Too Tight.</li>
-              <li><strong id="stat-total-budget-sum">$0</strong> total budget tracked across all saved trips.</li>
+              <li><strong id="stat-too-tight-count">0</strong> run(s) are marked Too Tight.</li>
+              <li><strong id="stat-total-budget-sum">$0</strong> total budget tracked across all saved runs.</li>
             </ul>
           </div>
         </div>

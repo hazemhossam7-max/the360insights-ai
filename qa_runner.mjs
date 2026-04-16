@@ -127,7 +127,7 @@ async function runTestCase(testCase) {
       await clearTrips();
       await saveTripThroughUi(sampleTrips.balanced);
       await page.goto(`${baseUrl}/history`, { waitUntil: "domcontentloaded" });
-      await expect((await getText("#history-list")).includes("Cairo Escape"), "Saved trip missing from history.");
+      await expect((await getText("#history-list")).includes("Cairo Escape"), "Saved run missing from history.");
       await expect((await getText("#history-list")).includes("Cairo, Egypt"), "Destination missing from history.");
       break;
     }

@@ -502,7 +502,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "GET" && url.pathname === "/health") {
     sendJson(res, 200, {
       ok: true,
-      service: "trip-budget-agent",
+      service: "the360insights-ai-agent",
       status: "healthy",
     });
     return;
@@ -512,7 +512,7 @@ const server = http.createServer(async (req, res) => {
     sendText(
       res,
       200,
-      "Trip Budget Agent is running. POST Azure DevOps service hooks to /webhook."
+      "The360 Insights AI Agent is running. POST Azure DevOps service hooks to /webhook."
     );
     return;
   }
@@ -531,5 +531,5 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, HOST, () => {
-  console.log(`Trip Budget Agent listening on http://${HOST}:${PORT}`);
+  console.log(`The360 Insights AI Agent listening on http://${HOST}:${PORT}`);
 });

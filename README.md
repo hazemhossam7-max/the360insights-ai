@@ -1,268 +1,94 @@
-# Trip Budget Planner
+# The360 Insights AI QA
 
-A multi-page travel budgeting app with a lightweight Node.js backend, local JSON persistence, and browser-based QA automation.
+Website automation toolkit for inspecting a live URL, generating coverage with OpenAI, and running the resulting checks with Playwright and Azure DevOps.
 
-## Overview
+## What this repo does
 
-Trip Budget Planner helps a traveler:
+- crawls a website URL and extracts visible content, headings, buttons, links, and forms
+- generates concrete test cases from that evidence with OpenAI
+- runs the automated checks in Playwright
+- uploads generated cases into Azure DevOps Test Plans when credentials are provided
+- publishes bug reports, screenshots, and JUnit output as pipeline artifacts
 
-- generate a budget snapshot for a trip
-- calculate daily and per-traveler spending guidance
-- save trip plans to persistent storage
-- review saved history
-- inspect aggregate insights
-- compare multiple saved trips side by side
+## Main entry points
 
-The project is intentionally simple to run locally while still covering realistic app behavior across frontend, backend, persistence, and end-to-end tests.
+- `website_qa_runner.mjs` - website crawl, generation, execution, and reporting
+- `azure-pipelines.yml` - Azure Pipelines entry point for automated website runs
+- `agent/` - Azure DevOps webhook agent and migration helpers
+- `server.js` - local demo app server used by the repo's browser tests
 
-## Features
-
-- Multi-page experience:
-  - Planner
-  - History
-  - Insights
-  - Compare
-- Client-side validation for trip planning inputs
-- Server-side validation before persistence
-- Risk classification based on daily-per-traveler budget
-- Style-based allocation breakdowns
-- Saved trip history with style filtering
-- Aggregate analytics across saved trips
-- Side-by-side trip comparison view
-- Empty states and graceful backend-unavailable messaging
-- Playwright-based automated regression coverage
-
-## Pages
-
-### Planner
-
-The planner page lets a user:
-
-- enter trip details
-- generate a budget summary
-- see allocation recommendations
-- save a valid trip
-- reset the form
-
-### History
-
-The history page lets a user:
-
-- review saved trips
-- filter trips by travel style
-- clear all saved trips
-
-### Insights
-
-The insights page shows:
-
-- total trips
-- average budget
-- average daily budget
-- most common style
-- number of trips flagged as `Too Tight`
-- total budget tracked across all trips
-
-### Compare
-
-The compare page highlights:
-
-- best daily value trip
-- highest total budget trip
-- count of tight-budget trips
-- a side-by-side comparison table of saved plans
-
-## Validation and Business Rules
-
-### Input rules
-
-- Trip name: 2 to 40 characters
-- Destination: 2 to 50 characters
-- Budget: `100` to `50000`
-- Days: `1` to `30`
-- Travelers: `1` to `10`
-- Travel style: required
-- Notes: up to `160` characters
-
-### Risk rules
-
-`dailyPerTraveler = total budget / days / travelers`
-
-- `< 35` => `Too Tight`
-- `35` to `< 80` => `Balanced`
-- `>= 80` => `Comfortable`
-
-### Allocation rules
-
-- Shoestring:
-  - Lodging 35%
-  - Food 25%
-  - Transport 20%
-  - Activities 20%
-- Balanced:
-  - Lodging 40%
-  - Food 25%
-  - Transport 15%
-  - Activities 20%
-- Comfort:
-  - Lodging 45%
-  - Food 20%
-  - Transport 15%
-  - Activities 20%
-
-## Tech Stack
-
-- Frontend: HTML, CSS, Vanilla JavaScript
-- Backend: Node.js built-in `http`, `fs`, and `path`
-- Persistence: local JSON file at `data/trips.json`
-- QA: Playwright via Node
-
-See also [tech_stack.md](./tech_stack.md).
-
-## Project Structure
-
-```text
-testing/
-  index.html
-  history.html
-  insights.html
-  compare.html
-  styles.css
-  planner.js
-  history.js
-  insights.js
-  compare.js
-  server.js
-  qa_runner.mjs
-  test_cases.json
-  test_plan.md
-  requirements.md
-  tech_stack.md
-  data/
-  bug_reports/
-```
-
-## Getting Started
-
-### Prerequisites
-
-- Node.js
-- npm
-
-### Install dependencies
+## Local run
 
 ```bash
 npm install
-```
-
-### Run the app
-
-```bash
 npm run serve
 ```
 
-Then open:
+Open:
 
 - [http://127.0.0.1:4180](http://127.0.0.1:4180)
 
-## Testing
+## Automated website run
 
-Run the end-to-end QA suite:
-
-```bash
-npm run test:e2e
-```
-
-The QA runner:
-
-- loads the app in Chromium
-- exercises planner, history, insights, and compare flows
-- captures screenshots and markdown bug reports on failure
-- writes a JSON summary to `bug_reports/latest_report.json`
-
-Run the generated website automation suite:
+Run the generated website automation against a URL:
 
 ```bash
-npm run test:website:auto -- https://example.com
+npm run test:website:auto -- https://the360insights.ai/
 ```
 
-The generated website automation runner:
+Set `OPENAI_API_KEY` to enable OpenAI generation. If Azure DevOps variables are present, the runner can also create or update test cases in a plan and suite.
 
-- analyzes the target website
-- asks OpenAI for coverage by default when `OPENAI_API_KEY` is set
-- executes the generated checks in Playwright
-- writes a JSON summary to `bug_reports/latest_website_automation.json`
+## Azure Pipelines
 
-Rewrite existing Azure DevOps test cases from summary text into Steps-only test cases:
+The pipeline accepts:
 
-```bash
-npm run migrate:test-cases
-```
+- `websiteUrl` - the website to inspect and test
+- `OPENAI_API_KEY` - secret pipeline variable for generation
+- `AZDO_PROJECT_URL` or `AZDO_ORG_URL` + `AZDO_PROJECT` - Azure DevOps target
+- `AZDO_PAT` or `System.AccessToken` - Azure DevOps authentication
+- `AZDO_TEST_PLAN_ID` and `AZDO_TEST_SUITE_ID` - optional upload targets
 
-That script uses your Azure DevOps PAT to update the existing cases in place.
-If you leave `AZDO_TEST_PLAN_ID` unset, it walks every test plan in the project.
+## Azure DevOps agent
 
-## Azure DevOps Agent
-
-The repo also includes a separate webhook agent in [`agent/`](./agent/).
-
-That service:
+The `agent/` folder contains a webhook service that:
 
 - receives Azure DevOps service-hook events
-- fetches the full User Story from Azure DevOps
-- generates draft test cases from the story text with OpenAI when `OPENAI_API_KEY` is set
-- falls back to Gemini if only `GEMINI_API_KEY` is configured
-- can optionally fall back to a rule-based generator if `ALLOW_HEURISTIC_FALLBACK=true`
-- can also inspect a website URL and generate test cases from the observed pages and features
+- reads work items from Azure DevOps
+- generates test cases from stories or website content
+- can rewrite existing Azure DevOps test cases from Description into Steps
 
-To run it locally:
+Run it locally with:
 
 ```bash
 npm run agent:serve
 ```
 
-The agent expects these environment variables:
+## Repository layout
 
-- `AZDO_ORG_URL`
-- `AZDO_PROJECT`
-- `AZDO_PAT`
-- `OPENAI_API_KEY` preferred for AI-driven test generation and website automation
-- `OPENAI_MODEL` and `OPENAI_BASE_URL` if you want to override the defaults
-- `GEMINI_API_KEY` still supported if you want to keep using Gemini
-- `GEMINI_MODEL` optional, defaults to `gemini-2.5-flash`
-- `AI_PROVIDER` optional, set to `gemini` or `openai` to force a provider
-- `AZDO_TEST_PLAN_ID` and `AZDO_TEST_SUITE_ID` if you want the agent to upload test cases into Azure Test Plans
+```text
+testing/
+  azure-pipelines.yml
+  website_qa_runner.mjs
+  agent/
+  bug_reports/
+  data/
+  history.html
+  insights.html
+  compare.html
+  index.html
+  planner.js
+  history.js
+  insights.js
+  compare.js
+  server.js
+  tests/
+  test_cases.json
+  test_plan.md
+  requirements.md
+  tech_stack.md
+```
 
-The agent also exposes `GET /inspect-url?url=https://example.com` and `POST /inspect-url` for website analysis. It crawls the site, summarizes visible pages and features, and then generates and uploads test cases the same way it does for user stories.
+## Legacy local demo app
 
-If you want the generated website coverage to run automatically in Azure Pipelines, pass the `websiteUrl` pipeline parameter when you click **Run pipeline** and provide `OPENAI_API_KEY` as a secret pipeline variable. The pipeline can then call `website_qa_runner.mjs`, upload the generated cases into Azure DevOps, and execute the AI-generated coverage in Playwright.
+The repo still includes a small local HTML/JS app and Playwright suite. Those files are kept as a stable browser target and can still be run locally, but the primary project focus is now website automation for The360 Insights.
 
-For the clean new website project, I recommend a separate Azure DevOps project and a separate repository. The local code here is now acting as the starter template for that website-first flow.
-
-If you want the runner to target a specific Azure DevOps project, set `AZDO_PROJECT_URL` to a full project URL such as `https://dev.azure.com/hazemtest1/hazemtest1`.
-
-The website automation run writes its JSON summary and screenshots into `bug_reports/` and its JUnit file into `test-results/junit.xml`.
-
-If your App Service is on a Free or Shared tier and `Always On` is unavailable, the repo includes a keep-alive GitHub Action in `.github/workflows/keepalive-trip-budget-agent.yml` that pings the `/health` endpoint every 15 minutes to reduce cold-start delays.
-
-## API Endpoints
-
-- `GET /api/trips`
-- `POST /api/trips`
-- `DELETE /api/trips`
-- `GET /api/stats`
-
-## Key Files
-
-- [server.js](./server.js): backend routes, validation, persistence, stats
-- [planner.js](./planner.js): planner logic, calculations, saving
-- [history.js](./history.js): history rendering and filtering
-- [insights.js](./insights.js): aggregate stats rendering
-- [compare.js](./compare.js): comparison page logic
-- [qa_runner.mjs](./qa_runner.mjs): end-to-end automation
-- [test_cases.json](./test_cases.json): source of truth for QA cases
-
-## Notes
-
-- Opening the HTML files directly from disk will show the UI shell, but backend-powered features work fully when the Node server is running.
-- Runtime notices are shown in file-preview mode to clarify that persistence and analytics depend on the backend.

@@ -1,8 +1,8 @@
 (function () {
-  function loadPlannerScript() {
-    if (document.querySelector('script[src="./planner.js"]')) {
-      return;
-    }
+function loadAppScript() {
+  if (document.querySelector('script[src="./planner.js"]')) {
+    return;
+  }
 
     const script = document.createElement("script");
     script.src = "./planner.js";
@@ -14,5 +14,5 @@
     return;
   }
 
-  loadPlannerScript();
+loadAppScript();
 })();

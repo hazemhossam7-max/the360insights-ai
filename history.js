@@ -34,8 +34,8 @@
       list.classList.add("hidden");
       emptyState.classList.remove("hidden");
       emptyState.textContent = selected === "All"
-        ? "No saved trips yet. Save a plan from the Planner page."
-        : `No ${selected} trips found.`;
+        ? "No saved runs yet. Save a run from the Overview page."
+        : `No ${selected} runs found.`;
       return;
     }
 
@@ -65,7 +65,7 @@
 
   async function loadTrips() {
     if (isFilePreview) {
-      runtimeNotice.textContent = "History needs the backend. Open the app from http://127.0.0.1:4180 to load saved trips.";
+      runtimeNotice.textContent = "History needs the backend. Open the app from http://127.0.0.1:4180 to load saved runs.";
       runtimeNotice.classList.remove("hidden");
       list.classList.add("hidden");
       emptyState.classList.remove("hidden");
@@ -82,7 +82,7 @@
     } catch (error) {
       list.classList.add("hidden");
       emptyState.classList.remove("hidden");
-      emptyState.textContent = "Trip history is unavailable right now. Please try again.";
+      emptyState.textContent = "Run history is unavailable right now. Please try again.";
     }
   }
 

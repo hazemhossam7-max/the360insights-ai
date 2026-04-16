@@ -59,7 +59,7 @@
       "compare-tight-copy",
       tooTightTrips.length
         ? tooTightTrips.map((trip) => trip.tripName).join(", ")
-        : "No saved trips are flagged as Too Tight."
+        : "No saved runs are flagged as Too Tight."
     );
 
     tableBody.innerHTML = "";
@@ -82,7 +82,7 @@
 
   async function loadTrips() {
     if (isFilePreview) {
-      runtimeNotice.textContent = "Compare view needs the backend. Open the app from http://127.0.0.1:4180 to compare saved trips.";
+      runtimeNotice.textContent = "Compare view needs the backend. Open the app from http://127.0.0.1:4180 to compare saved runs.";
       runtimeNotice.classList.remove("hidden");
       emptyState.classList.remove("hidden");
       emptyState.textContent = "Comparison data is unavailable in file preview mode.";
@@ -96,7 +96,7 @@
       renderTrips(payload.trips);
     } catch (error) {
       emptyState.classList.remove("hidden");
-      emptyState.textContent = "Trip comparisons are unavailable right now. Please try again.";
+      emptyState.textContent = "Run comparisons are unavailable right now. Please try again.";
       content.classList.add("hidden");
     }
   }

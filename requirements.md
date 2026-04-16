@@ -1,107 +1,43 @@
-# Trip Budget Planner Requirements
+# The360 Insights AI QA Requirements
 
 ## Overview
-Build a responsive multi-page travel planning website with a backend that stores trip plans on disk and exposes API endpoints for trip history, aggregate insights, and saved-trip comparison workflows.
 
-## Core User Stories
-- As a traveler, I can create a trip budget plan from the home page.
-- As a traveler, I can save the generated trip to persistent storage.
-- As a traveler, I can review previously saved trips on a history page.
-- As a traveler, I can filter saved trips by travel style.
-- As a traveler, I can review aggregate trip insights on a dedicated insights page.
-- As a traveler, I can compare saved trips side by side on a dedicated comparison page.
-- As a traveler, I can clear all saved trips and see the UI update immediately.
+Build a website automation project that can inspect a live URL, generate useful test coverage from the visible page content, run the checks with Playwright, and publish the results into Azure DevOps artifacts or Test Plans.
+
+## Goals
+
+- Crawl a website URL and summarize observable features
+- Generate concrete automated coverage with OpenAI
+- Execute the generated checks in Playwright
+- Store the output in pipeline artifacts
+- Optionally upload generated cases to Azure DevOps Test Plans
 
 ## Functional Requirements
-- Provide four pages:
-  - Home planner page
-  - History page
-  - Insights page
-  - Compare page
-- Provide a navigation bar linking all pages.
-- Home page form fields:
-  - Trip name: required text, 2 to 40 characters after trimming.
-  - Destination: required text, 2 to 50 characters after trimming.
-  - Total budget: required number, minimum 100, maximum 50000.
-  - Number of days: required number, minimum 1, maximum 30.
-  - Travelers: required number, minimum 1, maximum 10.
-  - Travel style: required select with `Shoestring`, `Balanced`, and `Comfort`.
-  - Notes: optional text, maximum 160 characters.
-- Home page actions:
-  - `Plan My Budget`
-  - `Save Trip`
-  - `Reset`
-- On successful planning, calculate and display:
-  - Total budget
-  - Daily budget
-  - Budget per traveler
-  - Daily per traveler
-  - Risk level label based on budget sufficiency
-  - Allocation percentages and dollar amounts for Lodging, Food, Transport, and Activities
-- `Save Trip` must remain disabled until a valid plan has been generated.
-- Saving must persist the latest valid trip plan to backend storage.
-- History page must:
-  - Load saved trips from the backend
-  - Show newest trips first
-  - Display trip name, destination, style, budget, daily budget, and risk level
-  - Support client-side filtering by style
-  - Support clearing all trips via the backend
-- Insights page must:
-  - Load aggregate stats from the backend
-  - Show total saved trips
-  - Show average total budget
-  - Show average daily budget
-  - Show most common travel style
-  - Show count of trips marked `Too Tight`
-- Compare page must:
-  - Load saved trips from the backend
-  - Highlight the best daily-value trip
-  - Highlight the highest total-budget trip
-  - Show the count of `Too Tight` trips
-  - Render a side-by-side comparison table for saved plans
-- Provide empty states when no trips exist.
-- Provide a helpful runtime notice when pages are opened directly from disk without the backend.
 
-## Backend Requirements
-- Implement a Node.js backend server.
-- Persist saved trip data in a local JSON file under the workspace.
-- Provide API endpoints:
-  - `GET /api/trips`
-  - `POST /api/trips`
-  - `DELETE /api/trips`
-  - `GET /api/stats`
-- Validate incoming payloads on the server before saving.
-- Return JSON responses with appropriate success or validation error messages.
-- Serve both clean routes and `.html` routes for multi-page navigation.
+- Accept a `websiteUrl` input for the automation run
+- Extract headings, links, buttons, forms, and page text from the target site
+- Generate multiple site-specific test cases from the crawl results
+- Prefer OpenAI when `OPENAI_API_KEY` is present
+- Fall back to a safe local generator when the AI path is unavailable
+- Execute the generated checks automatically in the browser
+- Produce screenshots and markdown bug reports for failures
+- Publish a JUnit report and JSON summary for the pipeline run
 
-## Risk Rules
-- Compute daily-per-traveler budget as `total budget / days / travelers`.
-- Risk level rules:
-  - Less than 35: `Too Tight`
-  - 35 to less than 80: `Balanced`
-  - 80 or greater: `Comfortable`
+## Azure DevOps Integration
 
-## Allocation Rules
-- Shoestring:
-  - Lodging 35%
-  - Food 25%
-  - Transport 20%
-  - Activities 20%
-- Balanced:
-  - Lodging 40%
-  - Food 25%
-  - Transport 15%
-  - Activities 20%
-- Comfort:
-  - Lodging 45%
-  - Food 20%
-  - Transport 15%
-  - Activities 20%
+- Support `AZDO_PROJECT_URL` or `AZDO_ORG_URL` + `AZDO_PROJECT`
+- Support `AZDO_PAT` or `System.AccessToken`
+- Support optional plan and suite IDs for upload targets
+- Reuse existing Azure DevOps utilities for uploads and migration
 
-## Non-Functional Requirements
-- Use semantic HTML and accessible form labels.
-- Support desktop and mobile layouts.
-- Keep the visual system distinctive and consistent across pages.
-- Keep all artifacts runnable locally with Node and a modern Chromium browser.
-- Maintain automated end-to-end regression coverage for all key pages and flows.
-- Generate actionable bug artifacts on test failures.
+## Non-Goals
+
+- Rebuilding the old trip-planner demo into a production app
+- Storing sensitive data outside the configured Azure DevOps / OpenAI settings
+- Turning Azure Test Plans into the primary browser runner
+
+## Acceptance Criteria
+
+- The pipeline can run end to end from a website URL
+- The pipeline can generate and execute meaningful test coverage
+- The repository no longer presents itself as a trip-planner project

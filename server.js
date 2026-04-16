@@ -196,7 +196,7 @@ function routeStatic(req, res) {
     "/compare.html": "compare.html",
     "/styles.css": "styles.css",
     "/app.js": "app.js",
-    "/planner.js": "planner.js",
+  "/planner.js": "planner.js",
     "/history.js": "history.js",
     "/insights.js": "insights.js",
     "/compare.js": "compare.js",
@@ -259,5 +259,5 @@ const server = http.createServer(async (req, res) => {
 
 ensureStore();
 server.listen(PORT, "127.0.0.1", () => {
-  console.log(`Trip Budget Planner server running at http://127.0.0.1:${PORT}`);
+  console.log(`The360 Insights AI QA server running at http://127.0.0.1:${PORT}`);
 });

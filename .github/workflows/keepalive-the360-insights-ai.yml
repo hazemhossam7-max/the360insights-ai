@@ -1,4 +1,4 @@
-name: Keep Trip Budget Agent Warm
+name: Keep The360 Insights AI Agent Warm
 
 on:
   schedule:
@@ -12,7 +12,7 @@ jobs:
     steps:
       - name: Ping health endpoint
         env:
-          KEEPALIVE_URL: https://trip-budget-agent-azhyh3fxezg8cha2.westeurope-01.azurewebsites.net/health
+          KEEPALIVE_URL: https://the360insights-ai.azurewebsites.net/health
         run: |
           set -e
           echo "Pinging ${KEEPALIVE_URL}"
