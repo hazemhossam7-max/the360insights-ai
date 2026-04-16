@@ -252,6 +252,7 @@ That runner expects:
 - optional `AZDO_TEST_SUITE_ID`
 
 In Azure Pipelines, add those as pipeline variables and let the job call `azure_suite_runner.mjs` so it executes the cases from your suites.
+The run writes its JSON summary and screenshots into `bug_reports/` and its JUnit file into `test-results/junit.xml`.
 
 If your App Service is on a Free or Shared tier and `Always On` is unavailable, the repo includes a keep-alive GitHub Action in `.github/workflows/keepalive-trip-budget-agent.yml` that pings the `/health` endpoint every 15 minutes to reduce cold-start delays.
 

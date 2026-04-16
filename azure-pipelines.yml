@@ -44,11 +44,11 @@ steps:
     testRunTitle: "Trip Budget Planner E2E"
 
 - task: PublishPipelineArtifact@1
-  displayName: "Publish Playwright HTML report"
+  displayName: "Publish suite bug reports"
   condition: succeededOrFailed()
   inputs:
-    targetPath: "playwright-report"
-    artifact: "playwright-report"
+    targetPath: "bug_reports"
+    artifact: "bug_reports"
     publishLocation: "pipeline"
 
 - task: PublishPipelineArtifact@1
