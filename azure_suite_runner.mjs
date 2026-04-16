@@ -14,6 +14,7 @@ const bugDir = path.join(root, "bug_reports");
 const testResultsDir = path.join(root, "test-results");
 const reportPath = path.join(bugDir, "latest_azdo_suite_run.json");
 const junitPath = path.join(testResultsDir, "junit.xml");
+const defaultProjectUrl = "https://dev.azure.com/hazemtest1/hazemtest1";
 
 function readEnv(...keys) {
   for (const key of keys) {
@@ -61,6 +62,27 @@ function parseIdList(value) {
     .split(",")
     .map((item) => parsePositiveInteger(item.trim()))
     .filter((item) => Number.isFinite(item) && item > 0);
+}
+
+function parseAzureDevOpsProjectUrl(value) {
+  const raw = String(value || "").trim();
+  if (!raw) {
+    return { orgUrl: "", project: "" };
+  }
+
+  try {
+    const url = new URL(raw);
+    const segments = url.pathname
+      .split("/")
+      .map((segment) => segment.trim())
+      .filter(Boolean);
+    const orgName = segments[0] || "";
+    const project = segments[1] || "";
+    const orgUrl = orgName ? `${url.origin}/${orgName}` : url.origin;
+    return { orgUrl, project };
+  } catch {
+    return { orgUrl: "", project: "" };
+  }
 }
 
 async function fetchJson(url, options = {}) {
@@ -455,13 +477,16 @@ async function collectSuiteIds(client, planId) {
 }
 
 async function loadAzureDevOpsCases() {
+  const projectUrl = readEnv("AZDO_PROJECT_URL") || defaultProjectUrl;
+  const parsedProjectUrl = parseAzureDevOpsProjectUrl(projectUrl);
   const config = {
     orgUrl: readEnv(
       "AZDO_ORG_URL",
       "SYSTEM_TEAMFOUNDATIONCOLLECTIONURI",
-      "SYSTEM_COLLECTIONURI"
+      "SYSTEM_COLLECTIONURI",
+      parsedProjectUrl.orgUrl
     ),
-    project: readEnv("AZDO_PROJECT", "SYSTEM_TEAMPROJECT"),
+    project: readEnv("AZDO_PROJECT", "SYSTEM_TEAMPROJECT", parsedProjectUrl.project),
     pat: readEnv("AZDO_PAT"),
   };
   console.log(
@@ -469,6 +494,7 @@ async function loadAzureDevOpsCases() {
       orgUrl: config.orgUrl,
       project: config.project,
       patPresent: Boolean(config.pat),
+      projectUrl,
       azdoOrgUrl: readEnv("AZDO_ORG_URL"),
       systemCollectionUri: readEnv("SYSTEM_TEAMFOUNDATIONCOLLECTIONURI", "SYSTEM_COLLECTIONURI"),
       systemTeamProject: readEnv("SYSTEM_TEAMPROJECT"),
