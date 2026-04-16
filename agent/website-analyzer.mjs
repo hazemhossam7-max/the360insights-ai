@@ -195,6 +195,7 @@ function summarizePage(page) {
     url: page.url,
     title: page.title,
     description: page.description,
+    contentPreview: page.contentPreview,
     headings: page.headings.slice(0, 6),
     buttons: page.buttons.slice(0, 6),
     forms: page.forms.slice(0, 4),
@@ -212,7 +213,7 @@ function deriveFeatureCandidates(pages) {
   const candidates = new Map();
 
   for (const page of pages) {
-    const text = `${page.title || ""} ${page.description || ""} ${(page.headings || []).join(" ")} ${(page.buttons || []).join(" ")} ${(page.links || []).map((link) => `${link.text || ""} ${link.href || ""}`).join(" ")}`.toLowerCase();
+    const text = `${page.title || ""} ${page.description || ""} ${page.contentPreview || ""} ${(page.headings || []).join(" ")} ${(page.buttons || []).join(" ")} ${(page.links || []).map((link) => `${link.text || ""} ${link.href || ""}`).join(" ")}`.toLowerCase();
     for (const feature of FEATURE_KEYWORDS) {
       const matches = feature.terms.filter((term) => text.includes(term));
       if (matches.length) {
@@ -274,6 +275,7 @@ export async function analyzeWebsite(rawUrl, options = {}) {
       contentType,
       title: extractTitle(html),
       description: extractMetaDescription(html),
+      contentPreview: stripTags(html).slice(0, 1200),
       headings: extractHeadings(html),
       buttons: extractButtons(html),
       forms: extractForms(html),
@@ -339,7 +341,7 @@ export async function analyzeWebsite(rawUrl, options = {}) {
     url: rootUrl.toString(),
     host: rootUrl.host,
     title: rootPage.title || rootUrl.hostname,
-    summary: rootPage.description || rootPage.headings[0] || `Website at ${rootUrl.hostname}`,
+    summary: rootPage.description || rootPage.headings[0] || rootPage.contentPreview || `Website at ${rootUrl.hostname}`,
     featureCandidates,
     notablePaths,
     pages: observedPages,

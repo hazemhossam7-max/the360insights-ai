@@ -4,11 +4,18 @@ trigger:
 pr:
 - main
 
+parameters:
+  - name: websiteUrl
+    displayName: Website URL
+    type: string
+    default: ""
+
 pool:
   vmImage: "ubuntu-latest"
 
 variables:
   CI: "true"
+  PLAYWRIGHT_JUNIT_OUTPUT_NAME: "junit.xml"
 
 steps:
 - checkout: self
@@ -25,17 +32,23 @@ steps:
 - script: npx playwright install --with-deps chromium
   displayName: "Install Playwright browser and dependencies"
 
-- script: npm run test:azdo:suites
-  displayName: "Run Azure DevOps suite cases"
-  env:
-    AZDO_ORG_URL: $(AZDO_ORG_URL)
-    SYSTEM_TEAMFOUNDATIONCOLLECTIONURI: $(System.TeamFoundationCollectionUri)
-    AZDO_PROJECT: $(AZDO_PROJECT)
-    SYSTEM_TEAMPROJECT: $(System.TeamProject)
-    AZDO_PAT: $(AZDO_PAT)
-    SYSTEM_ACCESSTOKEN: $(System.AccessToken)
-    AZDO_TEST_PLAN_ID: $(AZDO_TEST_PLAN_ID)
-    AZDO_TEST_SUITE_ID: $(AZDO_TEST_SUITE_ID)
+- ${{ if ne(parameters.websiteUrl, '') }}:
+  - script: node website_qa_runner.mjs "${{ parameters.websiteUrl }}"
+    displayName: "Run website generation and automation"
+    env:
+      AZDO_PROJECT_URL: $(AZDO_PROJECT_URL)
+      OPENAI_API_KEY: $(OPENAI_API_KEY)
+      OPENAI_MODEL: $(OPENAI_MODEL)
+      OPENAI_BASE_URL: $(OPENAI_BASE_URL)
+      AI_PROVIDER: openai
+      AZDO_ORG_URL: $(AZDO_ORG_URL)
+      SYSTEM_TEAMFOUNDATIONCOLLECTIONURI: $(System.TeamFoundationCollectionUri)
+      AZDO_PROJECT: $(AZDO_PROJECT)
+      SYSTEM_TEAMPROJECT: $(System.TeamProject)
+      AZDO_PAT: $(AZDO_PAT)
+      SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+      AZDO_TEST_PLAN_ID: $(AZDO_TEST_PLAN_ID)
+      AZDO_TEST_SUITE_ID: $(AZDO_TEST_SUITE_ID)
 
 - task: PublishTestResults@2
   displayName: "Publish JUnit test results"
@@ -44,7 +57,7 @@ steps:
     testResultsFormat: "JUnit"
     testResultsFiles: "test-results/junit.xml"
     failTaskOnFailedTests: true
-    testRunTitle: "Trip Budget Planner E2E"
+    testRunTitle: "Website Automation"
 
 - task: PublishPipelineArtifact@1
   displayName: "Publish suite bug reports"

@@ -3,10 +3,30 @@ import path from "node:path";
 import { chromium } from "playwright";
 import { analyzeWebsite } from "./agent/website-analyzer.mjs";
 import { generateTestCasesForWebsite } from "./agent/ai-test-case-generator.mjs";
+import { createTestPlansClient } from "./agent/testplans-client.mjs";
 
 const root = process.cwd();
 const bugDir = path.join(root, "bug_reports");
+const testResultsDir = path.join(root, "test-results");
 const reportPath = path.join(bugDir, "latest_website_automation.json");
+const junitPath = path.join(testResultsDir, "junit.xml");
+
+function readEnv(...keys) {
+  for (const key of keys) {
+    const value = process.env[key];
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      if (!trimmed) {
+        continue;
+      }
+      if (/^\$\([^)]+\)$/.test(trimmed) || /^\$\{[^}]+\}$/.test(trimmed)) {
+        continue;
+      }
+      return trimmed;
+    }
+  }
+  return "";
+}
 
 function cleanText(value) {
   return String(value || "")
@@ -14,8 +34,46 @@ function cleanText(value) {
     .trim();
 }
 
+function escapeXml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
 function escapeRegExp(value) {
   return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function parsePositiveInteger(value) {
+  const parsed = Number(value);
+  if (Number.isFinite(parsed) && parsed > 0 && Number.isInteger(parsed)) {
+    return parsed;
+  }
+  return null;
+}
+
+function parseAzureDevOpsProjectUrl(value) {
+  const raw = String(value || "").trim();
+  if (!raw) {
+    return { orgUrl: "", project: "" };
+  }
+
+  try {
+    const url = new URL(raw);
+    const segments = url.pathname
+      .split("/")
+      .map((segment) => segment.trim())
+      .filter(Boolean);
+    const orgName = segments[0] || "";
+    const project = segments[1] || "";
+    const orgUrl = orgName ? `${url.origin}/${orgName}` : url.origin;
+    return { orgUrl, project };
+  } catch {
+    return { orgUrl: "", project: "" };
+  }
 }
 
 const FOCUS_STOPWORDS = new Set([
@@ -279,6 +337,106 @@ function summarizeContentFocus(websiteBrief) {
   );
 }
 
+async function writeJunitReport(summary) {
+  const testCaseXml = summary.results
+    .map((item) => {
+      const name = `${item.id} - ${item.title}`;
+      const failure =
+        item.status === "failed"
+          ? `\n      <failure message="${escapeXml(item.error || "Test failed")}">${escapeXml(
+              item.error || "Test failed"
+            )}</failure>`
+          : "";
+
+      return [
+        `    <testcase classname="website-${escapeXml(summary.websiteBrief?.host || "site")}" name="${escapeXml(name)}" time="0.00">`,
+        failure,
+        "    </testcase>",
+      ]
+        .filter(Boolean)
+        .join("\n");
+    })
+    .join("\n");
+
+  const junitXml = `<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="Website Automation" tests="${summary.total}" failures="${summary.failed}" errors="0" skipped="0">
+  <testsuite name="Website Automation" tests="${summary.total}" failures="${summary.failed}" errors="0" skipped="0">
+${testCaseXml}
+  </testsuite>
+</testsuites>
+`;
+
+  await fs.writeFile(junitPath, junitXml, "utf8");
+}
+
+async function uploadGeneratedCases(websiteBrief, testCaseDrafts) {
+  const projectUrl = readEnv("AZDO_PROJECT_URL");
+  const parsedProjectUrl = parseAzureDevOpsProjectUrl(projectUrl);
+  const config = {
+    orgUrl: readEnv(
+      "AZDO_ORG_URL",
+      "SYSTEM_TEAMFOUNDATIONCOLLECTIONURI",
+      "SYSTEM_COLLECTIONURI",
+      parsedProjectUrl.orgUrl
+    ),
+    project: readEnv("AZDO_PROJECT", "SYSTEM_TEAMPROJECT", parsedProjectUrl.project),
+    pat: readEnv("AZDO_PAT"),
+    accessToken: readEnv("SYSTEM_ACCESSTOKEN"),
+  };
+  const planId = parsePositiveInteger(readEnv("AZDO_TEST_PLAN_ID"));
+  if (!config.orgUrl || !config.project || !planId) {
+    return null;
+  }
+
+  const client = createTestPlansClient(config);
+  const plan = await client.getTestPlan(planId);
+  const rootSuiteId = parsePositiveInteger(plan?.rootSuite?.id);
+  if (!rootSuiteId) {
+    throw new Error(`Azure DevOps plan ${planId} does not expose a valid root suite.`);
+  }
+
+  let suiteId = parsePositiveInteger(readEnv("AZDO_TEST_SUITE_ID"));
+  if (!suiteId) {
+    const suiteName = `${cleanText(websiteBrief?.title || websiteBrief?.host || "Website")} (${new Date().toISOString().slice(0, 10)})`;
+    const suite = await client.createTestSuite({
+      planId,
+      parentSuiteId: rootSuiteId,
+      name: suiteName,
+    });
+    suiteId = parsePositiveInteger(suite?.id);
+  }
+
+  if (!suiteId) {
+    throw new Error("A valid Azure DevOps suite id could not be resolved.");
+  }
+
+  const createdIds = [];
+  for (const testCase of testCaseDrafts.testCases || []) {
+    const created = await client.createTestCaseWorkItem({
+      title: testCase.title,
+      steps: testCase.steps || [],
+      expectedResult: testCase.expectedResult || "",
+    });
+    if (created?.id) {
+      createdIds.push(created.id);
+    }
+  }
+
+  if (createdIds.length) {
+    await client.addTestCasesToSuite({
+      planId,
+      suiteId,
+      testCaseIds: createdIds,
+    });
+  }
+
+  return {
+    planId,
+    suiteId,
+    createdIds,
+  };
+}
+
 async function verifyContentConsistency(page, websiteBrief) {
   await goHome(page, websiteBrief.url);
   const title = cleanText(await page.title()).toLowerCase();
@@ -534,6 +692,7 @@ async function main() {
   }
 
   await fs.mkdir(bugDir, { recursive: true });
+  await fs.mkdir(testResultsDir, { recursive: true });
 
   const websiteBrief = await analyzeWebsite(websiteUrl);
   const testCaseDrafts = await generateWebsiteDrafts(websiteBrief, {
@@ -545,6 +704,9 @@ async function main() {
     geminiModel,
     geminiBaseUrl,
   });
+  const azureUpload = await uploadGeneratedCases(websiteBrief, testCaseDrafts).catch((error) => ({
+    error: error.message,
+  }));
 
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage({ viewport: { width: 1440, height: 1200 } });
@@ -593,6 +755,7 @@ ${error.message}
     websiteUrl: websiteBrief.url,
     aiProvider: provider,
     generationSource: testCaseDrafts.generationSource,
+    azureUpload,
     total: testCaseDrafts.testCases.length,
     passed: results.filter((item) => item.status === "passed").length,
     failed: failures.length,
@@ -602,6 +765,7 @@ ${error.message}
     failures,
   };
 
+  await writeJunitReport(summary);
   await fs.writeFile(reportPath, JSON.stringify(summary, null, 2), "utf8");
 
   if (failures.length > 0) {

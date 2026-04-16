@@ -85,12 +85,15 @@ export function createOpenAIClient(config) {
         : kind === "website"
           ? [
               "You are a senior QA lead.",
-              "Generate the most useful manual test cases for the website brief below.",
-              "Think like a test designer: include navigation, form, negative, boundary, and integration coverage when relevant.",
-              "Prioritize the discovered user journeys and feature candidates.",
+              "Generate the most useful website test cases for the brief below.",
+              "Focus on concrete visible behavior from the observed pages, headings, buttons, links, forms, and feature candidates.",
+              "Prefer specific titles such as billing, login, dashboard, pricing, navigation, search, support, or content sections when the site evidence supports them.",
+              "Avoid vague titles like generic happy path or typical user flow unless the site evidence truly warrants them.",
+              "Think like a test designer: include navigation, form, negative, boundary, responsive, accessibility, and content coverage when relevant.",
               `Generate at least ${targetCaseCount} distinct test cases if the website surface supports it.`,
               "Do not write implementation details.",
-              "Use concise but complete steps.",
+              "Use concise but complete steps that a human tester could follow.",
+              "Tie each case to the actual site structure and evidence in the brief.",
               "Return only structured JSON that matches the provided schema.",
             ]
           : [

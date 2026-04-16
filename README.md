@@ -235,24 +235,13 @@ The agent expects these environment variables:
 
 The agent also exposes `GET /inspect-url?url=https://example.com` and `POST /inspect-url` for website analysis. It crawls the site, summarizes visible pages and features, and then generates and uploads test cases the same way it does for user stories.
 
-If you want the generated website coverage to run automatically in Azure Pipelines, pass the `websiteUrl` pipeline parameter when you click **Run pipeline** and provide `OPENAI_API_KEY` as a secret pipeline variable. The pipeline can then call `website_qa_runner.mjs` and execute the AI-generated coverage in Playwright.
+If you want the generated website coverage to run automatically in Azure Pipelines, pass the `websiteUrl` pipeline parameter when you click **Run pipeline** and provide `OPENAI_API_KEY` as a secret pipeline variable. The pipeline can then call `website_qa_runner.mjs`, upload the generated cases into Azure DevOps, and execute the AI-generated coverage in Playwright.
 
-To run the Azure DevOps Test Plan suite cases directly instead of the repo-only Playwright specs, use:
+For the clean new website project, I recommend a separate Azure DevOps project and a separate repository. The local code here is now acting as the starter template for that website-first flow.
 
-```bash
-npm run test:azdo:suites
-```
+If you want the runner to target a specific Azure DevOps project, set `AZDO_PROJECT_URL` to a full project URL such as `https://dev.azure.com/hazemtest1/hazemtest1`.
 
-That runner expects:
-
-- `AZDO_ORG_URL`
-- `AZDO_PROJECT`
-- `AZDO_PAT`
-- optional `AZDO_TEST_PLAN_ID`
-- optional `AZDO_TEST_SUITE_ID`
-
-In Azure Pipelines, add those as pipeline variables and let the job call `azure_suite_runner.mjs` so it executes the cases from your suites.
-The run writes its JSON summary and screenshots into `bug_reports/` and its JUnit file into `test-results/junit.xml`.
+The website automation run writes its JSON summary and screenshots into `bug_reports/` and its JUnit file into `test-results/junit.xml`.
 
 If your App Service is on a Free or Shared tier and `Always On` is unavailable, the repo includes a keep-alive GitHub Action in `.github/workflows/keepalive-trip-budget-agent.yml` that pings the `/health` endpoint every 15 minutes to reduce cold-start delays.
 
