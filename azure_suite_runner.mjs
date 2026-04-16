@@ -495,12 +495,14 @@ async function loadAzureDevOpsCases() {
     ),
     project: readEnv("AZDO_PROJECT", "SYSTEM_TEAMPROJECT", parsedProjectUrl.project),
     pat: readEnv("AZDO_PAT"),
+    accessToken: readEnv("SYSTEM_ACCESSTOKEN"),
   };
   console.log(
     JSON.stringify({
       orgUrl: config.orgUrl,
       project: config.project,
       patPresent: Boolean(config.pat),
+      accessTokenPresent: Boolean(config.accessToken),
       projectUrl,
       azdoOrgUrl: readEnv("AZDO_ORG_URL"),
       systemCollectionUri: readEnv("SYSTEM_TEAMFOUNDATIONCOLLECTIONURI", "SYSTEM_COLLECTIONURI"),

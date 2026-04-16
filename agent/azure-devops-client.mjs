@@ -2,11 +2,14 @@ function trimTrailingSlash(value) {
   return String(value || "").replace(/\/+$/, "");
 }
 
-function buildBasicAuthHeader(pat) {
-  if (!pat) {
-    return null;
+function buildAuthHeader(pat, accessToken) {
+  if (pat) {
+    return `Basic ${Buffer.from(`:${pat}`).toString("base64")}`;
   }
-  return `Basic ${Buffer.from(`:${pat}`).toString("base64")}`;
+  if (accessToken) {
+    return `Bearer ${accessToken}`;
+  }
+  return null;
 }
 
 function normalizeFields(fields = {}) {
@@ -37,7 +40,7 @@ function normalizeFields(fields = {}) {
 export function createAzureDevOpsClient(config) {
   const orgUrl = trimTrailingSlash(config.orgUrl);
   const project = String(config.project || "").trim();
-  const authHeader = buildBasicAuthHeader(config.pat);
+  const authHeader = buildAuthHeader(config.pat, config.accessToken);
 
   if (!orgUrl) {
     throw new Error("AZDO_ORG_URL is required.");
