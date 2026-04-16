@@ -456,10 +456,24 @@ async function collectSuiteIds(client, planId) {
 
 async function loadAzureDevOpsCases() {
   const config = {
-    orgUrl: readEnv("AZDO_ORG_URL", "SYSTEM_COLLECTIONURI"),
+    orgUrl: readEnv(
+      "AZDO_ORG_URL",
+      "SYSTEM_TEAMFOUNDATIONCOLLECTIONURI",
+      "SYSTEM_COLLECTIONURI"
+    ),
     project: readEnv("AZDO_PROJECT", "SYSTEM_TEAMPROJECT"),
     pat: readEnv("AZDO_PAT"),
   };
+  console.log(
+    JSON.stringify({
+      orgUrl: config.orgUrl,
+      project: config.project,
+      patPresent: Boolean(config.pat),
+      azdoOrgUrl: readEnv("AZDO_ORG_URL"),
+      systemCollectionUri: readEnv("SYSTEM_TEAMFOUNDATIONCOLLECTIONURI", "SYSTEM_COLLECTIONURI"),
+      systemTeamProject: readEnv("SYSTEM_TEAMPROJECT"),
+    })
+  );
   const client = createAzureDevOpsClient(config);
   const testPlansClient = (await import("./agent/testplans-client.mjs")).createTestPlansClient(config);
   const explicitPlanIds = parseIdList(readEnv("AZDO_TEST_PLAN_ID"));
