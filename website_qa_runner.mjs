@@ -76,6 +76,24 @@ function parseAzureDevOpsProjectUrl(value) {
   }
 }
 
+function buildAzureDevOpsConfig() {
+  const projectUrl = readEnv("AZDO_PROJECT_URL");
+  const parsedProjectUrl = parseAzureDevOpsProjectUrl(projectUrl);
+
+  return {
+    orgUrl: readEnv(
+      "AZDO_ORG_URL",
+      "SYSTEM_TEAMFOUNDATIONCOLLECTIONURI",
+      "SYSTEM_COLLECTIONURI",
+      parsedProjectUrl.orgUrl
+    ),
+    project: readEnv("AZDO_PROJECT", "SYSTEM_TEAMPROJECT", parsedProjectUrl.project),
+    pat: readEnv("AZDO_PAT"),
+    accessToken: readEnv("SYSTEM_ACCESSTOKEN"),
+    projectUrl,
+  };
+}
+
 const FOCUS_STOPWORDS = new Set([
   "verify",
   "display",
@@ -370,19 +388,7 @@ ${testCaseXml}
 }
 
 async function uploadGeneratedCases(websiteBrief, testCaseDrafts) {
-  const projectUrl = readEnv("AZDO_PROJECT_URL");
-  const parsedProjectUrl = parseAzureDevOpsProjectUrl(projectUrl);
-  const config = {
-    orgUrl: readEnv(
-      "AZDO_ORG_URL",
-      "SYSTEM_TEAMFOUNDATIONCOLLECTIONURI",
-      "SYSTEM_COLLECTIONURI",
-      parsedProjectUrl.orgUrl
-    ),
-    project: readEnv("AZDO_PROJECT", "SYSTEM_TEAMPROJECT", parsedProjectUrl.project),
-    pat: readEnv("AZDO_PAT"),
-    accessToken: readEnv("SYSTEM_ACCESSTOKEN"),
-  };
+  const config = buildAzureDevOpsConfig();
   const planId = parsePositiveInteger(readEnv("AZDO_TEST_PLAN_ID"));
   if (!config.orgUrl || !config.project || !planId) {
     return null;
@@ -411,14 +417,22 @@ async function uploadGeneratedCases(websiteBrief, testCaseDrafts) {
   }
 
   const createdIds = [];
+  const failedCases = [];
   for (const testCase of testCaseDrafts.testCases || []) {
-    const created = await client.createTestCaseWorkItem({
-      title: testCase.title,
-      steps: testCase.steps || [],
-      expectedResult: testCase.expectedResult || "",
-    });
-    if (created?.id) {
-      createdIds.push(created.id);
+    try {
+      const created = await client.createTestCaseWorkItem({
+        title: testCase.title,
+        steps: testCase.steps || [],
+        expectedResult: testCase.expectedResult || "",
+      });
+      if (created?.id) {
+        createdIds.push(created.id);
+      }
+    } catch (error) {
+      failedCases.push({
+        title: testCase?.title || "",
+        error: error.message,
+      });
     }
   }
 
@@ -434,6 +448,89 @@ async function uploadGeneratedCases(websiteBrief, testCaseDrafts) {
     planId,
     suiteId,
     createdIds,
+    failedCases,
+  };
+}
+
+async function publishGeneratedCaseResults(azureUpload, testCaseDrafts, results) {
+  const planId = parsePositiveInteger(azureUpload?.planId);
+  const suiteId = parsePositiveInteger(azureUpload?.suiteId);
+  if (!planId || !suiteId) {
+    return null;
+  }
+
+  const createdIds = new Set(
+    (Array.isArray(azureUpload?.createdIds) ? azureUpload.createdIds : [])
+      .map((value) => Number(value))
+      .filter((value) => Number.isFinite(value) && value > 0)
+  );
+  if (!createdIds.size) {
+    return { updated: [], skipped: 0 };
+  }
+
+  const config = buildAzureDevOpsConfig();
+  if (!config.orgUrl || !config.project) {
+    return { updated: [], skipped: createdIds.size, error: "Azure DevOps configuration is incomplete." };
+  }
+
+  const client = createTestPlansClient(config);
+  const suiteCases = [];
+  let continuationToken = "";
+  do {
+    const page = await client.getSuiteTestCases({
+      planId,
+      suiteId,
+      isRecursive: true,
+      continuationToken,
+    });
+    suiteCases.push(...page.testCases);
+    continuationToken = String(page.continuationToken || "").trim();
+  } while (continuationToken);
+
+  const pointByWorkItemId = new Map();
+  for (const suiteCase of suiteCases) {
+    const workItemId = Number(suiteCase?.workItemId || suiteCase?.id);
+    const pointId = Number(suiteCase?.pointId);
+    if (Number.isFinite(workItemId) && workItemId > 0 && Number.isFinite(pointId) && pointId > 0) {
+      pointByWorkItemId.set(workItemId, pointId);
+    }
+  }
+
+  const pointUpdates = [];
+  for (const result of Array.isArray(results) ? results : []) {
+    const workItemId = Number(result?.id);
+    if (!createdIds.has(workItemId)) {
+      continue;
+    }
+    const pointId = pointByWorkItemId.get(workItemId);
+    if (!pointId) {
+      continue;
+    }
+
+    pointUpdates.push({
+      id: pointId,
+      outcome: result?.status === "passed" ? "passed" : "failed",
+    });
+  }
+
+  if (!pointUpdates.length) {
+    return {
+      updated: [],
+      skipped: createdIds.size,
+      suiteCases: suiteCases.length,
+    };
+  }
+
+  const updated = await client.updateTestPoints({
+    planId,
+    suiteId,
+    pointUpdates,
+  });
+
+  return {
+    updated,
+    updatedCount: pointUpdates.length,
+    suiteCases: suiteCases.length,
   };
 }
 
@@ -766,6 +863,11 @@ ${error.message}
     results,
     failures,
   };
+
+  const azureResultPublish = await publishGeneratedCaseResults(azureUpload, testCaseDrafts, results).catch((error) => ({
+    error: error.message,
+  }));
+  summary.azureResultPublish = azureResultPublish;
 
   await writeJunitReport(summary);
   await fs.writeFile(reportPath, JSON.stringify(summary, null, 2), "utf8");

@@ -18,6 +18,17 @@ function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function chunkArray(values, size = 100) {
+  const items = Array.isArray(values) ? values : [];
+  const chunks = [];
+
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size));
+  }
+
+  return chunks;
+}
+
 function isRetryableStatus(status) {
   return [429, 500, 502, 503, 504].includes(Number(status));
 }
@@ -305,21 +316,84 @@ export function createTestPlansClient(config) {
         .filter((value) => Number.isFinite(value) && value > 0);
 
       if (!ids.length) {
-        return { added: [], ids: [] };
+        return { added: [], ids: [], errors: [] };
       }
 
-      const url = new URL(
-        `${orgUrl}/${encodeURIComponent(project)}/_apis/test/Plans/${encodeURIComponent(planId)}/suites/${encodeURIComponent(suiteId)}/testcases/${ids.join(",")}`
-      );
-      url.searchParams.set("api-version", "7.1");
+      const added = [];
+      const errors = [];
+      for (const chunk of chunkArray(ids, 100)) {
+        const url = new URL(
+          `${orgUrl}/${encodeURIComponent(project)}/_apis/test/Plans/${encodeURIComponent(planId)}/suites/${encodeURIComponent(suiteId)}/testcases/${chunk.join(",")}`
+        );
+        url.searchParams.set("api-version", "7.1");
 
-      const added = await requestJson(url.toString(), {
-        method: "POST",
-      });
+        try {
+          added.push(
+            await requestJson(url.toString(), {
+              method: "POST",
+            })
+          );
+        } catch (error) {
+          errors.push({
+            ids: chunk,
+            error: error.message,
+          });
+        }
+      }
 
       return {
         added,
         ids,
+        errors,
+      };
+    },
+
+    async updateTestPoints({ planId, suiteId, pointUpdates }) {
+      const updates = (pointUpdates || [])
+        .map((item) => ({
+          id: Number(item?.id || item?.pointId || 0),
+          outcome: String(item?.outcome || "").trim().toLowerCase(),
+        }))
+        .filter((item) => Number.isFinite(item.id) && item.id > 0 && item.outcome);
+
+      if (!updates.length) {
+        return { updated: [], ids: [], errors: [] };
+      }
+
+      const updated = [];
+      const errors = [];
+      for (const chunk of chunkArray(updates, 100)) {
+        const url = new URL(
+          `${orgUrl}/${encodeURIComponent(project)}/_apis/testplan/Plans/${encodeURIComponent(planId)}/Suites/${encodeURIComponent(suiteId)}/TestPoint`
+        );
+        url.searchParams.set("api-version", "7.1");
+
+        try {
+          updated.push(
+            await requestJson(url.toString(), {
+              method: "PATCH",
+              body: JSON.stringify(
+                chunk.map((item) => ({
+                  id: item.id,
+                  results: {
+                    outcome: item.outcome,
+                  },
+                }))
+              ),
+            })
+          );
+        } catch (error) {
+          errors.push({
+            ids: chunk.map((item) => item.id),
+            error: error.message,
+          });
+        }
+      }
+
+      return {
+        updated,
+        ids: updates.map((item) => item.id),
+        errors,
       };
     },
   };
