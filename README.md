@@ -200,6 +200,7 @@ npm run migrate:test-cases
 ```
 
 That script uses your Azure DevOps PAT to update the existing cases in place.
+If you leave `AZDO_TEST_PLAN_ID` unset, it walks every test plan in the project.
 
 ## Azure DevOps Agent
 

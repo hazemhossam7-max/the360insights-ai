@@ -20,6 +20,13 @@ function parsePositiveInteger(value) {
   return null;
 }
 
+function parseIdList(value) {
+  return String(value || "")
+    .split(",")
+    .map((item) => parsePositiveInteger(item.trim()))
+    .filter((value) => Number.isFinite(value) && value > 0);
+}
+
 async function listAllSuiteTestCases(client, planId, suiteId) {
   const cases = [];
   let continuationToken = "";
@@ -43,81 +50,104 @@ async function main() {
   const orgUrl = readEnv("AZDO_ORG_URL");
   const project = readEnv("AZDO_PROJECT");
   const pat = readEnv("AZDO_PAT");
-  const planId = parsePositiveInteger(readEnv("AZDO_TEST_PLAN_ID"));
+  const explicitPlanIds = parseIdList(readEnv("AZDO_TEST_PLAN_ID"));
   const explicitSuiteId = parsePositiveInteger(readEnv("AZDO_TEST_SUITE_ID"));
   const rewriteExisting = /^(true|1|yes|on)$/i.test(readEnv("REWRITE_EXISTING_TEST_CASES"));
-
-  if (!planId) {
-    throw new Error("AZDO_TEST_PLAN_ID is required.");
-  }
 
   const config = { orgUrl, project, pat };
   const testPlansClient = createTestPlansClient(config);
   const azureClient = createAzureDevOpsClient(config);
 
-  const plan = await testPlansClient.getTestPlan(planId);
-  const rootSuiteId = parsePositiveInteger(plan?.rootSuite?.id);
-  const suiteId = explicitSuiteId || rootSuiteId;
-
-  if (!suiteId) {
-    throw new Error("Could not determine a suite id to migrate.");
-  }
-
-  const suiteCases = await listAllSuiteTestCases(testPlansClient, planId, suiteId);
   const migrated = [];
   const skipped = [];
   const seenWorkItemIds = new Set();
+  const plansToProcess = [];
 
-  for (const suiteCase of suiteCases) {
-    const workItemId = Number(suiteCase.workItemId || suiteCase.id);
-    if (!Number.isFinite(workItemId) || workItemId <= 0) {
-      skipped.push({ id: suiteCase.id, reason: "missing work item id" });
+  if (explicitPlanIds.length) {
+    for (const planId of explicitPlanIds) {
+      plansToProcess.push(await testPlansClient.getTestPlan(planId));
+    }
+  } else {
+    let continuationToken = "";
+    do {
+      const page = await testPlansClient.listTestPlans({
+        includePlanDetails: true,
+        filterActivePlans: false,
+        continuationToken,
+      });
+      plansToProcess.push(...page.plans);
+      continuationToken = String(page.continuationToken || "").trim();
+    } while (continuationToken);
+  }
+
+  for (const plan of plansToProcess) {
+    const planId = parsePositiveInteger(plan?.id);
+    const rootSuiteId = parsePositiveInteger(plan?.rootSuite?.id);
+    const suiteId = explicitSuiteId || rootSuiteId;
+
+    if (!planId) {
+      skipped.push({ id: plan?.id || "unknown", reason: "missing plan id" });
       continue;
     }
 
-    if (seenWorkItemIds.has(workItemId)) {
-      skipped.push({ id: workItemId, reason: "duplicate work item from recursive suite listing" });
-      continue;
-    }
-    seenWorkItemIds.add(workItemId);
-
-    const workItem = await azureClient.getWorkItem(workItemId);
-    const description = String(workItem.description || "").trim();
-    const stepsHtml = String(workItem.stepsHtml || "").trim();
-
-    if (!description) {
-      skipped.push({ id: workItem.id, reason: "description already empty" });
+    if (!suiteId) {
+      skipped.push({ id: planId, reason: "could not determine a suite id to migrate" });
       continue;
     }
 
-    if (stepsHtml && !rewriteExisting) {
-      skipped.push({ id: workItem.id, reason: "steps already exist" });
-      continue;
+    const suiteCases = await listAllSuiteTestCases(testPlansClient, planId, suiteId);
+
+    for (const suiteCase of suiteCases) {
+      const workItemId = Number(suiteCase.workItemId || suiteCase.id);
+      if (!Number.isFinite(workItemId) || workItemId <= 0) {
+        skipped.push({ id: suiteCase.id, reason: "missing work item id" });
+        continue;
+      }
+
+      if (seenWorkItemIds.has(workItemId)) {
+        skipped.push({ id: workItemId, reason: "duplicate work item from recursive suite listing" });
+        continue;
+      }
+      seenWorkItemIds.add(workItemId);
+
+      const workItem = await azureClient.getWorkItem(workItemId);
+      const description = String(workItem.description || "").trim();
+      const stepsHtml = String(workItem.stepsHtml || "").trim();
+
+      if (!description) {
+        skipped.push({ id: workItem.id, reason: "description already empty" });
+        continue;
+      }
+
+      if (stepsHtml && !rewriteExisting) {
+        skipped.push({ id: workItem.id, reason: "steps already exist" });
+        continue;
+      }
+
+      const parsed = parseLegacyDescriptionToSteps(description);
+      if (!parsed.steps.length) {
+        skipped.push({ id: workItem.id, reason: "no step content found" });
+        continue;
+      }
+
+      await testPlansClient.updateTestCaseWorkItem(workItem.id, {
+        title: workItem.title,
+        steps: parsed.steps,
+        expectedResult: parsed.expectedResult,
+      });
+
+      migrated.push({
+        planId,
+        id: workItem.id,
+        title: workItem.title,
+        steps: parsed.steps.length,
+      });
     }
-
-    const parsed = parseLegacyDescriptionToSteps(description);
-    if (!parsed.steps.length) {
-      skipped.push({ id: workItem.id, reason: "no step content found" });
-      continue;
-    }
-
-    await testPlansClient.updateTestCaseWorkItem(workItem.id, {
-      title: workItem.title,
-      steps: parsed.steps,
-      expectedResult: parsed.expectedResult,
-    });
-
-    migrated.push({
-      id: workItem.id,
-      title: workItem.title,
-      steps: parsed.steps.length,
-    });
   }
 
   const summary = {
-    planId,
-    suiteId,
-    total: suiteCases.length,
+    planIds: plansToProcess.map((plan) => Number(plan?.id)).filter((value) => Number.isFinite(value) && value > 0),
+    suiteId: explicitSuiteId || null,
     migrated: migrated.length,
     skipped: skipped.length,
     migratedCases: migrated,

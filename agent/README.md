@@ -64,9 +64,9 @@ The script expects:
 - `AZDO_ORG_URL`
 - `AZDO_PROJECT`
 - `AZDO_PAT`
-- `AZDO_TEST_PLAN_ID`
+- `AZDO_TEST_PLAN_ID` optional, limit the rewrite to one or more comma-separated plan ids
 
-It scans the plan recursively, rewrites each test case that still has summary text in Description, and stores the converted content in Microsoft.VSTS.TCM.Steps.
+If `AZDO_TEST_PLAN_ID` is omitted, it scans every test plan in the project, rewrites each test case that still has summary text in Description, and stores the converted content in Microsoft.VSTS.TCM.Steps.
 
 ## Webhook URL
 

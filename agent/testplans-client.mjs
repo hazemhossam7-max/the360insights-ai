@@ -116,6 +116,38 @@ export function createTestPlansClient(config) {
       return requestJson(url.toString());
     },
 
+    async listTestPlans({ owner = "", continuationToken = "", includePlanDetails = true, filterActivePlans = false } = {}) {
+      const url = new URL(`${orgUrl}/${encodeURIComponent(project)}/_apis/testplan/plans`);
+      url.searchParams.set("api-version", "7.1");
+      if (owner) {
+        url.searchParams.set("owner", owner);
+      }
+      if (continuationToken) {
+        url.searchParams.set("continuationToken", continuationToken);
+      }
+      if (includePlanDetails) {
+        url.searchParams.set("includePlanDetails", "true");
+      }
+      if (filterActivePlans) {
+        url.searchParams.set("filterActivePlans", "true");
+      }
+
+      const { data, response } = await requestJsonWithMeta(url.toString());
+      const plans = Array.isArray(data)
+        ? data
+        : Array.isArray(data?.value)
+          ? data.value
+          : [];
+
+      return {
+        plans,
+        continuationToken:
+          response?.headers?.get?.("x-ms-continuationtoken") ||
+          data?.continuationToken ||
+          null,
+      };
+    },
+
     async getSuiteTestCases({ planId, suiteId, isRecursive = true, continuationToken = "" }) {
       const url = new URL(
         `${orgUrl}/${encodeURIComponent(project)}/_apis/test/Plans/${encodeURIComponent(planId)}/suites/${encodeURIComponent(suiteId)}/testcases`
