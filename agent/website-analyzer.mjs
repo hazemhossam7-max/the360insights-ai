@@ -6,6 +6,12 @@ const FEATURE_KEYWORDS = [
   { name: "Support", terms: ["help", "support", "contact", "faq", "documentation", "docs"] },
   { name: "Search", terms: ["search", "filter", "sort", "results"] },
   { name: "Dashboard", terms: ["dashboard", "overview", "analytics", "reports", "insights"] },
+  { name: "Data Visualization", terms: ["chart", "charts", "graph", "graphs", "visualization", "trend", "trends", "metric", "metrics"] },
+  { name: "Tables", terms: ["table", "tables", "row", "rows", "column", "columns", "grid", "grids"] },
+  { name: "Exports", terms: ["export", "exports", "download", "downloads", "csv", "pdf", "xlsx"] },
+  { name: "Notifications", terms: ["notification", "notifications", "alert", "alerts", "message", "messages"] },
+  { name: "Permissions", terms: ["permission", "permissions", "role", "roles", "access", "admin", "owner"] },
+  { name: "Forms", terms: ["form", "forms", "input", "inputs", "submit", "submit button", "validation", "field", "fields"] },
 ];
 
 function trimTrailingSlash(value) {
@@ -75,7 +81,7 @@ function extractHeadings(html) {
     if (text) {
       headings.push(text);
     }
-    if (headings.length >= 12) {
+    if (headings.length >= 20) {
       break;
     }
   }
@@ -91,7 +97,7 @@ function extractButtons(html) {
     if (text) {
       buttons.push(text);
     }
-    if (buttons.length >= 12) {
+    if (buttons.length >= 20) {
       break;
     }
   }
@@ -105,7 +111,7 @@ function extractButtons(html) {
     if (text) {
       buttons.push(text);
     }
-    if (buttons.length >= 12) {
+    if (buttons.length >= 20) {
       break;
     }
   }
@@ -139,7 +145,7 @@ function extractForms(html) {
       summary: summary || "form",
     });
 
-    if (forms.length >= 10) {
+    if (forms.length >= 20) {
       break;
     }
   }
@@ -171,7 +177,7 @@ function extractLinks(html, baseUrl) {
       internal: new URL(absoluteHref).origin === new URL(baseUrl).origin,
     });
 
-    if (links.length >= 50) {
+    if (links.length >= 100) {
       break;
     }
   }
@@ -211,16 +217,47 @@ function summarizePage(page) {
 
 function deriveFeatureCandidates(pages) {
   const candidates = new Map();
+  function addCandidate(feature, evidence) {
+    const label = cleanText(feature);
+    if (!label || label.length < 2) {
+      return;
+    }
+
+    const normalized = label.toLowerCase();
+    const current = candidates.get(normalized) || { feature: label, evidence: [] };
+    const nextEvidence = Array.from(new Set([...(current.evidence || []), ...(Array.isArray(evidence) ? evidence : [evidence]).filter(Boolean)]));
+    candidates.set(normalized, {
+      feature: current.feature || label,
+      evidence: nextEvidence,
+    });
+  }
 
   for (const page of pages) {
     const text = `${page.title || ""} ${page.description || ""} ${page.contentPreview || ""} ${(page.headings || []).join(" ")} ${(page.buttons || []).join(" ")} ${(page.links || []).map((link) => `${link.text || ""} ${link.href || ""}`).join(" ")}`.toLowerCase();
     for (const feature of FEATURE_KEYWORDS) {
       const matches = feature.terms.filter((term) => text.includes(term));
       if (matches.length) {
-        candidates.set(feature.name, {
-          feature: feature.name,
-          evidence: Array.from(new Set([...(candidates.get(feature.name)?.evidence || []), page.title || page.url].filter(Boolean))),
-        });
+        addCandidate(feature.name, [page.title || page.url]);
+      }
+    }
+
+    addCandidate(page.title || page.url, [page.url, page.description]);
+
+    for (const heading of page.headings || []) {
+      addCandidate(heading, [page.url, page.title]);
+    }
+
+    for (const button of page.buttons || []) {
+      addCandidate(button, [page.url, page.title]);
+    }
+
+    for (const form of page.forms || []) {
+      addCandidate(form.summary || "form", [page.url, form.action || "", form.method || ""]);
+    }
+
+    for (const link of page.links || []) {
+      if (link.internal && link.text) {
+        addCandidate(link.text, [page.url, link.absoluteHref]);
       }
     }
   }
@@ -256,7 +293,7 @@ async function fetchPage(url, timeoutMs) {
 export async function analyzeWebsite(rawUrl, options = {}) {
   const rootUrl = normalizeUrl(rawUrl);
   const timeoutMs = Number(options.timeoutMs || 15000);
-  const maxPages = Number(options.maxPages || 5);
+  const maxPages = Number(options.maxPages || 12);
   const visited = new Set();
   const pages = [];
 
@@ -284,7 +321,7 @@ export async function analyzeWebsite(rawUrl, options = {}) {
 
     pages.push(page);
 
-    if (depth >= 1) {
+    if (depth >= 2) {
       return;
     }
 

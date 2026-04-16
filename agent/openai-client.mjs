@@ -26,6 +26,7 @@ function extractOutputText(response) {
 }
 
 function buildSchema(targetCaseCount = 1) {
+  const requestedCount = Math.max(1, Number(targetCaseCount) || 1);
   return {
     type: "object",
     additionalProperties: false,
@@ -35,8 +36,8 @@ function buildSchema(targetCaseCount = 1) {
       summary: { type: "string" },
       testCases: {
         type: "array",
-        minItems: Math.max(1, Number(targetCaseCount) || 1),
-        maxItems: 8,
+        minItems: requestedCount,
+        maxItems: Math.max(8, Math.min(16, requestedCount)),
         items: {
           type: "object",
           additionalProperties: false,
@@ -70,6 +71,7 @@ export function createOpenAIClient(config) {
   const apiKey = String(config.apiKey || "").trim();
   const model = String(config.model || "gpt-4o-mini").trim();
   const baseUrl = trimTrailingSlash(config.baseUrl || "https://api.openai.com");
+  const targetCaseCount = Math.max(1, Number(config.targetCaseCount || 1));
 
   if (!apiKey) {
     throw new Error("OPENAI_API_KEY is required for AI generation.");
@@ -129,7 +131,7 @@ export function createOpenAIClient(config) {
         model,
         input: prompt,
         temperature: 0.2,
-        max_output_tokens: 1600,
+        max_output_tokens: targetCaseCount > 8 ? 3000 : 1600,
         text: {
           format: {
             type: "json_schema",

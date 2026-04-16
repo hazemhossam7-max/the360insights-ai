@@ -678,6 +678,7 @@ async function main() {
   const geminiApiKey = String(process.env.GEMINI_API_KEY || "").trim();
   const geminiModel = String(process.env.GEMINI_MODEL || "").trim();
   const geminiBaseUrl = String(process.env.GEMINI_BASE_URL || "").trim();
+  const websiteTargetCaseCount = parsePositiveInteger(readEnv("WEBSITE_TARGET_CASE_COUNT")) || 1000;
   const provider = aiProvider === "gemini" || aiProvider === "openai"
     ? aiProvider
     : openAiApiKey
@@ -703,6 +704,7 @@ async function main() {
     geminiApiKey,
     geminiModel,
     geminiBaseUrl,
+    websiteTargetCaseCount,
   });
   const azureUpload = await uploadGeneratedCases(websiteBrief, testCaseDrafts).catch((error) => ({
     error: error.message,

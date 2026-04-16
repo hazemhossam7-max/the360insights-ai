@@ -1,6 +1,7 @@
 import { createOpenAIClient } from "./openai-client.mjs";
 import { createGeminiClient } from "./gemini-client.mjs";
 import { generateTestCaseDrafts as generateHeuristicTestCaseDrafts } from "./story-to-tests.mjs";
+import { expandWebsiteTestCases } from "./website-case-expander.mjs";
 
 function normalizeCase(item, index) {
   const title = String(item?.title || "").trim();
@@ -70,6 +71,22 @@ function normalizeWebsiteResult(websiteBrief, result, source) {
   };
 }
 
+function expandWebsiteResult(websiteBrief, result, source, options = {}) {
+  const normalized = normalizeWebsiteResult(websiteBrief, result, source);
+  const targetCaseCount = Math.max(
+    1,
+    Number(options.websiteTargetCaseCount || process.env.WEBSITE_TARGET_CASE_COUNT || 1000) || 1000
+  );
+
+  return {
+    ...normalized,
+    generationSource: `${normalized.generationSource}+expanded`,
+    expandedFrom: normalized.testCases.length,
+    targetCaseCount,
+    testCases: expandWebsiteTestCases(websiteBrief, normalized.testCases, targetCaseCount),
+  };
+}
+
 function isTruthyFlag(value) {
   const normalized = String(value || "").trim().toLowerCase();
   return normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "on";
@@ -96,7 +113,7 @@ function resolveTargetCaseCount(content, kind) {
   if (kind === "website") {
     const featureCount = Array.isArray(content?.featureCandidates) ? content.featureCandidates.length : 0;
     const pageCount = Array.isArray(content?.pages) ? content.pages.length : 0;
-    return Math.max(5, Math.min(8, 3 + featureCount + pageCount));
+    return Math.max(12, Math.min(16, 6 + featureCount * 2 + pageCount * 2));
   }
 
   const acceptanceCriteria = String(content?.acceptanceCriteria || content?.description || "")
@@ -132,23 +149,26 @@ async function generateWithModel(content, options, kind, fallbackFactory) {
           });
 
     const result = await client.createResponse({ kind, content, targetCaseCount });
-    if (provider === "gemini") {
-      return kind === "website"
-        ? normalizeWebsiteResult(content, result, "gemini")
-        : normalizeGeminiResult(content, result);
+    if (kind === "website") {
+      return expandWebsiteResult(content, result, provider, options);
     }
 
-    return kind === "website"
-      ? normalizeWebsiteResult(content, result, "openai")
-      : normalizeOpenAIResult(content, result);
+    if (provider === "gemini") {
+      return normalizeGeminiResult(content, result);
+    }
+
+    return normalizeOpenAIResult(content, result);
   } catch (error) {
     if (heuristicFallbackEnabled) {
-      return {
+      const heuristic = {
         ...fallback,
         generationSource: "heuristic",
         model: null,
         generationNotes: error.message,
       };
+      return kind === "website"
+        ? expandWebsiteResult(content, heuristic, "heuristic", options)
+        : heuristic;
     }
 
     const providerLabel = provider === "gemini" ? "Gemini" : "OpenAI";
