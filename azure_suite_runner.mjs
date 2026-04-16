@@ -19,8 +19,15 @@ const defaultProjectUrl = "https://dev.azure.com/hazemtest1/hazemtest1";
 function readEnv(...keys) {
   for (const key of keys) {
     const value = process.env[key];
-    if (typeof value === "string" && value.trim()) {
-      return value.trim();
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      if (!trimmed) {
+        continue;
+      }
+      if (/^\$\([^)]+\)$/.test(trimmed) || /^\$\{[^}]+\}$/.test(trimmed)) {
+        continue;
+      }
+      return trimmed;
     }
   }
   return "";
@@ -569,14 +576,19 @@ async function loadAzureDevOpsCases() {
 
 async function main() {
   const baseUrl = readEnv("APP_BASE_URL") || "http://127.0.0.1:4180";
+  await fs.mkdir(bugDir, { recursive: true });
+  await fs.mkdir(testResultsDir, { recursive: true });
+  await fs.writeFile(
+    junitPath,
+    `<?xml version="1.0" encoding="UTF-8"?><testsuites name="Azure DevOps Suite Runner" tests="0" failures="0" errors="0" skipped="0"><testsuite name="Azure DevOps Suite Runner" tests="0" failures="0" errors="0" skipped="0"></testsuite></testsuites>`,
+    "utf8"
+  );
   const cases = await loadAzureDevOpsCases();
 
   if (!cases.length) {
     throw new Error("No Azure DevOps test cases were found to run.");
   }
 
-  await fs.mkdir(bugDir, { recursive: true });
-  await fs.mkdir(testResultsDir, { recursive: true });
   const server = await startLocalServer();
   await waitForServer(baseUrl);
 
