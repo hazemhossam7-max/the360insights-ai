@@ -456,8 +456,8 @@ async function collectSuiteIds(client, planId) {
 
 async function loadAzureDevOpsCases() {
   const config = {
-    orgUrl: readEnv("AZDO_ORG_URL"),
-    project: readEnv("AZDO_PROJECT"),
+    orgUrl: readEnv("AZDO_ORG_URL", "SYSTEM_COLLECTIONURI"),
+    project: readEnv("AZDO_PROJECT", "SYSTEM_TEAMPROJECT"),
     pat: readEnv("AZDO_PAT"),
   };
   const client = createAzureDevOpsClient(config);

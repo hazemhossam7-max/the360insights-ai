@@ -29,7 +29,9 @@ steps:
   displayName: "Run Azure DevOps suite cases"
   env:
     AZDO_ORG_URL: $(AZDO_ORG_URL)
+    SYSTEM_COLLECTIONURI: $(System.CollectionUri)
     AZDO_PROJECT: $(AZDO_PROJECT)
+    SYSTEM_TEAMPROJECT: $(System.TeamProject)
     AZDO_PAT: $(AZDO_PAT)
     AZDO_TEST_PLAN_ID: $(AZDO_TEST_PLAN_ID)
     AZDO_TEST_SUITE_ID: $(AZDO_TEST_SUITE_ID)
