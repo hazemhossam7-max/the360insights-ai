@@ -143,7 +143,13 @@ function buildFeaturePool(websiteBrief, seedCases = []) {
     }
 
     for (const link of Array.isArray(page?.importantLinks) ? page.importantLinks : []) {
-      const label = removeWebsiteName(link?.text || humanizePath(new URL(link?.href || page?.url || websiteBrief?.url || "https://example.com").pathname), websiteTitle);
+      let linkPath = "";
+      try {
+        linkPath = new URL(link?.href || page?.url || websiteBrief?.url || "https://example.com").pathname;
+      } catch {
+        linkPath = "";
+      }
+      const label = removeWebsiteName(link?.text || humanizePath(linkPath), websiteTitle);
       if (label && label.length >= 2) {
         addFeature(label, [page.url, link?.href || ""], "link", 4);
       }

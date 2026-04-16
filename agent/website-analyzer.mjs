@@ -18,6 +18,12 @@ function trimTrailingSlash(value) {
   return String(value || "").replace(/\/+$/, "");
 }
 
+function cleanText(value) {
+  return String(value || "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function normalizeUrl(input) {
   const raw = String(input || "").trim();
   if (!raw) {
