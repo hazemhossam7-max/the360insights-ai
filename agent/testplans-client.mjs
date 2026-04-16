@@ -148,6 +148,34 @@ export function createTestPlansClient(config) {
       };
     },
 
+    async listTestSuitesForPlan({ planId, asTreeView = true, continuationToken = "" }) {
+      const url = new URL(
+        `${orgUrl}/${encodeURIComponent(project)}/_apis/testplan/Plans/${encodeURIComponent(planId)}/suites`
+      );
+      url.searchParams.set("api-version", "7.1");
+      if (asTreeView) {
+        url.searchParams.set("asTreeView", "true");
+      }
+      if (continuationToken) {
+        url.searchParams.set("continuationToken", continuationToken);
+      }
+
+      const { data, response } = await requestJsonWithMeta(url.toString());
+      const suites = Array.isArray(data)
+        ? data
+        : Array.isArray(data?.value)
+          ? data.value
+          : [];
+
+      return {
+        suites,
+        continuationToken:
+          response?.headers?.get?.("x-ms-continuationtoken") ||
+          data?.continuationToken ||
+          null,
+      };
+    },
+
     async getSuiteTestCases({ planId, suiteId, isRecursive = true, continuationToken = "" }) {
       const url = new URL(
         `${orgUrl}/${encodeURIComponent(project)}/_apis/test/Plans/${encodeURIComponent(planId)}/suites/${encodeURIComponent(suiteId)}/testcases`

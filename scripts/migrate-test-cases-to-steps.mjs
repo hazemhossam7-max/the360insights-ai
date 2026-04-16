@@ -46,6 +46,22 @@ async function listAllSuiteTestCases(client, planId, suiteId) {
   return cases;
 }
 
+function collectSuiteIds(suites, output = new Set()) {
+  for (const suite of suites || []) {
+    const suiteId = parsePositiveInteger(suite?.id);
+    if (suiteId) {
+      output.add(suiteId);
+    }
+
+    const children = Array.isArray(suite?.children) ? suite.children : [];
+    if (children.length) {
+      collectSuiteIds(children, output);
+    }
+  }
+
+  return output;
+}
+
 async function main() {
   const orgUrl = readEnv("AZDO_ORG_URL");
   const project = readEnv("AZDO_PROJECT");
@@ -82,66 +98,90 @@ async function main() {
 
   for (const plan of plansToProcess) {
     const planId = parsePositiveInteger(plan?.id);
-    const rootSuiteId = parsePositiveInteger(plan?.rootSuite?.id);
-    const suiteId = explicitSuiteId || rootSuiteId;
 
     if (!planId) {
       skipped.push({ id: plan?.id || "unknown", reason: "missing plan id" });
       continue;
     }
 
-    if (!suiteId) {
-      skipped.push({ id: planId, reason: "could not determine a suite id to migrate" });
+    const suiteIds = explicitSuiteId
+      ? [explicitSuiteId]
+      : Array.from(
+          collectSuiteIds(
+            (
+              await (async () => {
+                const collected = [];
+                let continuationToken = "";
+                do {
+                  const page = await testPlansClient.listTestSuitesForPlan({
+                    planId,
+                    asTreeView: true,
+                    continuationToken,
+                  });
+                  collected.push(...page.suites);
+                  continuationToken = String(page.continuationToken || "").trim();
+                } while (continuationToken);
+                return collected;
+              })()
+            ) || []
+          )
+        );
+
+    if (!suiteIds.length) {
+      skipped.push({ id: planId, reason: "no suites were returned for the plan" });
       continue;
     }
 
-    const suiteCases = await listAllSuiteTestCases(testPlansClient, planId, suiteId);
+    for (const suiteId of suiteIds) {
+      const suiteCases = await listAllSuiteTestCases(testPlansClient, planId, suiteId);
 
-    for (const suiteCase of suiteCases) {
-      const workItemId = Number(suiteCase.workItemId || suiteCase.id);
-      if (!Number.isFinite(workItemId) || workItemId <= 0) {
-        skipped.push({ id: suiteCase.id, reason: "missing work item id" });
-        continue;
+      for (const suiteCase of suiteCases) {
+        const workItemId = Number(suiteCase.workItemId || suiteCase.id);
+        if (!Number.isFinite(workItemId) || workItemId <= 0) {
+          skipped.push({ id: suiteCase.id, reason: "missing work item id" });
+          continue;
+        }
+
+        if (seenWorkItemIds.has(workItemId)) {
+          skipped.push({ id: workItemId, reason: "duplicate work item from suite listing" });
+          continue;
+        }
+        seenWorkItemIds.add(workItemId);
+
+        const workItem = await azureClient.getWorkItem(workItemId);
+        const description = String(workItem.description || "").trim();
+        const stepsHtml = String(workItem.stepsHtml || "").trim();
+
+        if (!description) {
+          skipped.push({ id: workItem.id, reason: "description already empty" });
+          continue;
+        }
+
+        if (stepsHtml && !rewriteExisting) {
+          skipped.push({ id: workItem.id, reason: "steps already exist" });
+          continue;
+        }
+
+        const parsed = parseLegacyDescriptionToSteps(description);
+        if (!parsed.steps.length) {
+          skipped.push({ id: workItem.id, reason: "no step content found" });
+          continue;
+        }
+
+        await testPlansClient.updateTestCaseWorkItem(workItem.id, {
+          title: workItem.title,
+          steps: parsed.steps,
+          expectedResult: parsed.expectedResult,
+        });
+
+        migrated.push({
+          planId,
+          suiteId,
+          id: workItem.id,
+          title: workItem.title,
+          steps: parsed.steps.length,
+        });
       }
-
-      if (seenWorkItemIds.has(workItemId)) {
-        skipped.push({ id: workItemId, reason: "duplicate work item from recursive suite listing" });
-        continue;
-      }
-      seenWorkItemIds.add(workItemId);
-
-      const workItem = await azureClient.getWorkItem(workItemId);
-      const description = String(workItem.description || "").trim();
-      const stepsHtml = String(workItem.stepsHtml || "").trim();
-
-      if (!description) {
-        skipped.push({ id: workItem.id, reason: "description already empty" });
-        continue;
-      }
-
-      if (stepsHtml && !rewriteExisting) {
-        skipped.push({ id: workItem.id, reason: "steps already exist" });
-        continue;
-      }
-
-      const parsed = parseLegacyDescriptionToSteps(description);
-      if (!parsed.steps.length) {
-        skipped.push({ id: workItem.id, reason: "no step content found" });
-        continue;
-      }
-
-      await testPlansClient.updateTestCaseWorkItem(workItem.id, {
-        title: workItem.title,
-        steps: parsed.steps,
-        expectedResult: parsed.expectedResult,
-      });
-
-      migrated.push({
-        planId,
-        id: workItem.id,
-        title: workItem.title,
-        steps: parsed.steps.length,
-      });
     }
   }
 
