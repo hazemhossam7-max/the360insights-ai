@@ -84,15 +84,17 @@ export function createOpenAIClient(config) {
     const baseInstructions =
       Array.isArray(request?.instructions) && request.instructions.length
         ? request.instructions.map((item) => String(item).trim()).filter(Boolean)
-        : kind === "website"
-          ? [
+          : kind === "website"
+            ? [
               "You are a senior QA lead.",
               "Generate the most useful website test cases for the brief below.",
               "Focus on concrete visible behavior from the observed pages, headings, buttons, links, forms, and feature candidates.",
-              "Prefer specific titles such as billing, login, dashboard, pricing, navigation, search, support, or content sections when the site evidence supports them.",
+              "Prefer specific titles such as billing, login, dashboard, history, compare, insights, pricing, navigation, search, support, charts, tables, or content sections when the site evidence supports them.",
               "Avoid vague titles like generic happy path or typical user flow unless the site evidence truly warrants them.",
-              "Think like a test designer: include navigation, form, negative, boundary, responsive, accessibility, and content coverage when relevant.",
-              `Generate at least ${targetCaseCount} distinct test cases if the website surface supports it.`,
+              "Think like a test designer: include navigation, form, negative, boundary, responsive, accessibility, performance, and content coverage when relevant.",
+              `Generate a diverse seed set of at least ${targetCaseCount} distinct cases if the website surface supports it.`,
+              "Each seed case should map to a distinct feature, page, route, or visible interaction that appears in the evidence.",
+              "The runner will expand these seed cases into a much larger suite, so focus on breadth and specificity instead of repetitive permutations.",
               "Do not write implementation details.",
               "Use concise but complete steps that a human tester could follow.",
               "Tie each case to the actual site structure and evidence in the brief.",

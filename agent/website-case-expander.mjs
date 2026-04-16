@@ -55,6 +55,11 @@ function humanizePath(pathname) {
   );
 }
 
+function includesAny(text, terms = []) {
+  const haystack = normalizeKey(text);
+  return terms.some((term) => haystack.includes(normalizeKey(term)));
+}
+
 function extractSeedFeature(testCase, websiteTitle) {
   const raw = cleanText(
     [testCase?.sourceCriterion, testCase?.title, testCase?.expectedResult]
@@ -80,6 +85,24 @@ function buildFeaturePool(websiteBrief, seedCases = []) {
   const websiteTitle = cleanText(websiteBrief?.websiteTitle || websiteBrief?.title || websiteBrief?.host || websiteBrief?.url || "Website");
   const websiteHost = cleanText(websiteBrief?.host || "");
   const websiteSummary = cleanText(websiteBrief?.summary || "");
+  const websiteContext = normalizeKey(
+    [
+      websiteTitle,
+      websiteHost,
+      websiteSummary,
+      ...(Array.isArray(websiteBrief?.featureCandidates) ? websiteBrief.featureCandidates.map((item) => item?.feature || "") : []),
+      ...(Array.isArray(websiteBrief?.pages)
+        ? websiteBrief.pages.flatMap((page) => [
+            page?.title || "",
+            page?.description || "",
+            ...(page?.headings || []),
+            ...(page?.buttons || []),
+            ...(page?.forms || []).map((form) => form?.summary || ""),
+            ...(page?.importantLinks || []).map((link) => link?.text || ""),
+          ])
+        : []),
+    ].join(" ")
+  );
   const features = new Map();
 
   function addFeature(label, evidence, kind = "feature", weight = 1) {
@@ -170,6 +193,112 @@ function buildFeaturePool(websiteBrief, seedCases = []) {
     }
   }
 
+  const domainFeatureGroups = [
+    {
+      terms: ["dashboard", "analytics", "insights", "reports", "metrics"],
+      items: [
+        ["dashboard overview", "dashboard"],
+        ["key metrics cards", "dashboard"],
+        ["trend charts", "dashboard"],
+        ["filters and drill-down", "dashboard"],
+        ["recent activity", "dashboard"],
+        ["saved views", "dashboard"],
+        ["export and download", "dashboard"],
+        ["comparison widgets", "dashboard"],
+      ],
+    },
+    {
+      terms: ["history", "recent", "saved", "archive"],
+      items: [
+        ["history list", "history"],
+        ["saved items", "history"],
+        ["clear all action", "history"],
+        ["persistence after save", "history"],
+        ["recent items ordering", "history"],
+      ],
+    },
+    {
+      terms: ["compare", "comparison", "versus", "vs"],
+      items: [
+        ["comparison view", "compare"],
+        ["side-by-side comparison", "compare"],
+        ["comparison filters", "compare"],
+        ["comparison navigation", "compare"],
+      ],
+    },
+    {
+      terms: ["search", "filter", "sort"],
+      items: [
+        ["search results", "search"],
+        ["filter chips", "search"],
+        ["sorting controls", "search"],
+        ["pagination controls", "search"],
+      ],
+    },
+    {
+      terms: ["form", "input", "submit", "validation"],
+      items: [
+        ["form validation", "form"],
+        ["required fields", "form"],
+        ["submission flow", "form"],
+        ["error messages", "form"],
+      ],
+    },
+    {
+      terms: ["login", "sign in", "register", "profile", "account"],
+      items: [
+        ["login flow", "auth"],
+        ["profile settings", "auth"],
+        ["password reset", "auth"],
+        ["session timeout", "auth"],
+      ],
+    },
+    {
+      terms: ["pricing", "billing", "invoice", "subscription", "payment"],
+      items: [
+        ["pricing plans", "billing"],
+        ["billing summary", "billing"],
+        ["invoice history", "billing"],
+        ["payment methods", "billing"],
+        ["plan upgrade", "billing"],
+      ],
+    },
+    {
+      terms: ["help", "support", "faq", "documentation"],
+      items: [
+        ["help center", "support"],
+        ["support contact", "support"],
+        ["faq content", "support"],
+      ],
+    },
+    {
+      terms: ["mobile", "responsive", "desktop", "viewport"],
+      items: [
+        ["mobile layout", "responsive"],
+        ["desktop layout", "responsive"],
+        ["cross-browser behavior", "responsive"],
+      ],
+    },
+    {
+      terms: ["accessibility", "keyboard", "aria", "label"],
+      items: [
+        ["keyboard navigation", "accessibility"],
+        ["screen reader labels", "accessibility"],
+        ["focus order", "accessibility"],
+      ],
+    },
+  ];
+
+  for (const group of domainFeatureGroups) {
+    if (!includesAny(websiteContext, group.terms)) {
+      continue;
+    }
+
+    for (const [label, kind] of group.items) {
+      addFeature(label, [websiteTitle, websiteSummary, websiteHost], kind, 7);
+    }
+  }
+
   const genericFallbacks = [
     "billing and pricing",
     "account and profile",
@@ -241,7 +370,7 @@ function buildThemeVariants() {
       key: "flow",
       kind: "flow",
       label: "typical user flow",
-      buildTitle: (feature, persona) => `Verify ${feature.label} works for a typical user flow`,
+      buildTitle: (feature, persona) => `Verify ${feature.label} works for ${persona.label}`,
       buildPreconditions: (feature) => [`The ${feature.label} area is accessible.`],
       buildSteps: (feature, persona, websiteTitle) => [
         `Open the ${websiteTitle} website as ${persona.label}.`,
@@ -271,7 +400,7 @@ function buildThemeVariants() {
       key: "validation",
       kind: "error",
       label: "invalid or empty input",
-      buildTitle: (feature, persona) => `Verify ${feature.label} handles invalid or empty input gracefully`,
+      buildTitle: (feature, persona) => `Verify ${feature.label} handles invalid or empty input gracefully for ${persona.label}`,
       buildPreconditions: (feature) => [`The ${feature.label} area accepts user input or interactions.`],
       buildSteps: (feature, persona, websiteTitle) => [
         `Open the ${websiteTitle} website as ${persona.label}.`,
@@ -286,7 +415,7 @@ function buildThemeVariants() {
       key: "responsive-mobile",
       kind: "responsive",
       label: "responsive mobile viewport",
-      buildTitle: (feature, persona) => `Verify responsive behavior on ${feature.label} for ${persona.label}`,
+      buildTitle: (feature, persona) => `Verify responsive behavior on ${feature.label} in mobile view for ${persona.label}`,
       buildPreconditions: (feature) => [`The ${feature.label} area is available on the site.`],
       buildSteps: (feature, persona, websiteTitle) => [
         `Open the ${websiteTitle} website on a desktop viewport.`,
@@ -301,7 +430,7 @@ function buildThemeVariants() {
       key: "responsive-desktop",
       kind: "responsive",
       label: "responsive desktop viewport",
-      buildTitle: (feature, persona) => `Verify responsive behavior on ${feature.label} for desktop users`,
+      buildTitle: (feature, persona) => `Verify responsive behavior on ${feature.label} in desktop view for ${persona.label}`,
       buildPreconditions: (feature) => [`The ${feature.label} area is available on the site.`],
       buildSteps: (feature, persona, websiteTitle) => [
         `Open the ${websiteTitle} website on a desktop-sized viewport.`,
@@ -316,7 +445,7 @@ function buildThemeVariants() {
       key: "accessibility-keyboard",
       kind: "accessibility",
       label: "keyboard accessibility",
-      buildTitle: (feature, persona) => `Verify accessibility basics on ${feature.label} with keyboard navigation`,
+      buildTitle: (feature, persona) => `Verify accessibility basics on ${feature.label} with keyboard navigation for ${persona.label}`,
       buildPreconditions: (feature) => [`The ${feature.label} area is reachable from the home page.`],
       buildSteps: (feature, persona, websiteTitle) => [
         `Open the ${websiteTitle} website as ${persona.label}.`,
@@ -331,7 +460,7 @@ function buildThemeVariants() {
       key: "accessibility-labels",
       kind: "accessibility",
       label: "screen reader labels",
-      buildTitle: (feature, persona) => `Verify accessibility labels for ${feature.label} are understandable`,
+      buildTitle: (feature, persona) => `Verify accessibility labels for ${feature.label} are understandable for ${persona.label}`,
       buildPreconditions: (feature) => [`The ${feature.label} area is visible.`],
       buildSteps: (feature, persona, websiteTitle) => [
         `Open the ${websiteTitle} website as ${persona.label}.`,
@@ -361,7 +490,7 @@ function buildThemeVariants() {
       key: "content",
       kind: "content",
       label: "content consistency",
-      buildTitle: (feature, persona) => `Verify content consistency for ${feature.label} for ${persona.label}`,
+      buildTitle: (feature, persona) => `Verify content consistency for ${feature.label} as ${persona.label}`,
       buildPreconditions: (feature) => [`The ${feature.label} content is available.`],
       buildSteps: (feature, persona, websiteTitle) => [
         `Open the ${websiteTitle} website as ${persona.label}.`,
