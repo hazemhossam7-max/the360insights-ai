@@ -50,12 +50,18 @@ steps:
       AZDO_TEST_PLAN_ID: $(AZDO_TEST_PLAN_ID)
       AZDO_TEST_SUITE_ID: $(AZDO_TEST_SUITE_ID)
 
+- script: |
+    mkdir -p "$(Build.SourcesDirectory)/bug_reports"
+    mkdir -p "$(Build.SourcesDirectory)/test-results"
+  displayName: "Ensure artifact directories exist"
+  condition: succeededOrFailed()
+
 - task: PublishTestResults@2
   displayName: "Publish JUnit test results"
   condition: succeededOrFailed()
   inputs:
     testResultsFormat: "JUnit"
-    testResultsFiles: "test-results/junit.xml"
+    testResultsFiles: "$(Build.SourcesDirectory)/test-results/junit.xml"
     failTaskOnFailedTests: true
     testRunTitle: "Website Automation"
 
@@ -63,7 +69,7 @@ steps:
   displayName: "Publish suite bug reports"
   condition: succeededOrFailed()
   inputs:
-    targetPath: "bug_reports"
+    targetPath: "$(Build.SourcesDirectory)/bug_reports"
     artifact: "bug_reports"
     publishLocation: "pipeline"
 
@@ -71,6 +77,6 @@ steps:
   displayName: "Publish raw test artifacts"
   condition: succeededOrFailed()
   inputs:
-    targetPath: "test-results"
+    targetPath: "$(Build.SourcesDirectory)/test-results"
     artifact: "test-results"
     publishLocation: "pipeline"
