@@ -4,3 +4,4 @@ data/
 *.log
 playwright-report/
 test-results/
+progress_assets/

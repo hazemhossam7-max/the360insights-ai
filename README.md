@@ -237,6 +237,22 @@ The agent also exposes `GET /inspect-url?url=https://example.com` and `POST /ins
 
 If you want the generated website coverage to run automatically in Azure Pipelines, pass the `websiteUrl` pipeline parameter when you click **Run pipeline** and provide `OPENAI_API_KEY` as a secret pipeline variable. The pipeline can then call `website_qa_runner.mjs` and execute the AI-generated coverage in Playwright.
 
+To run the Azure DevOps Test Plan suite cases directly instead of the repo-only Playwright specs, use:
+
+```bash
+npm run test:azdo:suites
+```
+
+That runner expects:
+
+- `AZDO_ORG_URL`
+- `AZDO_PROJECT`
+- `AZDO_PAT`
+- optional `AZDO_TEST_PLAN_ID`
+- optional `AZDO_TEST_SUITE_ID`
+
+In Azure Pipelines, add those as pipeline variables and let the job call `azure_suite_runner.mjs` so it executes the cases from your suites.
+
 If your App Service is on a Free or Shared tier and `Always On` is unavailable, the repo includes a keep-alive GitHub Action in `.github/workflows/keepalive-trip-budget-agent.yml` that pings the `/health` endpoint every 15 minutes to reduce cold-start delays.
 
 ## API Endpoints

@@ -4,18 +4,11 @@ trigger:
 pr:
 - main
 
-parameters:
-  - name: websiteUrl
-    displayName: Website URL
-    type: string
-    default: ""
-
 pool:
   vmImage: "ubuntu-latest"
 
 variables:
   CI: "true"
-  PLAYWRIGHT_JUNIT_OUTPUT_NAME: "junit.xml"
 
 steps:
 - checkout: self
@@ -32,20 +25,14 @@ steps:
 - script: npx playwright install --with-deps chromium
   displayName: "Install Playwright browser and dependencies"
 
-- script: npm run test:e2e
-  displayName: "Run Playwright end-to-end tests"
-
-- ${{ if ne(parameters.websiteUrl, '') }}:
-  - script: node website_qa_runner.mjs "${{ parameters.websiteUrl }}"
-    displayName: "Run AI-generated website automation"
-    env:
-      OPENAI_API_KEY: $(OPENAI_API_KEY)
-      OPENAI_MODEL: $(OPENAI_MODEL)
-      OPENAI_BASE_URL: $(OPENAI_BASE_URL)
-      AI_PROVIDER: openai
-      GEMINI_API_KEY: $(GEMINI_API_KEY)
-      GEMINI_MODEL: $(GEMINI_MODEL)
-      GEMINI_BASE_URL: $(GEMINI_BASE_URL)
+- script: npm run test:azdo:suites
+  displayName: "Run Azure DevOps suite cases"
+  env:
+    AZDO_ORG_URL: $(AZDO_ORG_URL)
+    AZDO_PROJECT: $(AZDO_PROJECT)
+    AZDO_PAT: $(AZDO_PAT)
+    AZDO_TEST_PLAN_ID: $(AZDO_TEST_PLAN_ID)
+    AZDO_TEST_SUITE_ID: $(AZDO_TEST_SUITE_ID)
 
 - task: PublishTestResults@2
   displayName: "Publish JUnit test results"
