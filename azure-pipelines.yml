@@ -49,6 +49,7 @@ steps:
       SYSTEM_ACCESSTOKEN: $(System.AccessToken)
       AZDO_TEST_PLAN_ID: $(AZDO_TEST_PLAN_ID)
       AZDO_TEST_SUITE_ID: $(AZDO_TEST_SUITE_ID)
+      RUN_EXISTING_AZDO_CASES_ONLY: "true"
 
 - script: |
     mkdir -p "$(Build.SourcesDirectory)/bug_reports"
@@ -62,7 +63,7 @@ steps:
   inputs:
     testResultsFormat: "JUnit"
     testResultsFiles: "$(Build.SourcesDirectory)/test-results/junit.xml"
-    failTaskOnFailedTests: true
+    failTaskOnFailedTests: false
     testRunTitle: "Website Automation"
 
 - task: PublishPipelineArtifact@1

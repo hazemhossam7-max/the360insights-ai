@@ -3,6 +3,7 @@ import path from "node:path";
 import { chromium } from "playwright";
 import { analyzeWebsite } from "./agent/website-analyzer.mjs";
 import { generateTestCasesForWebsite } from "./agent/ai-test-case-generator.mjs";
+import { createAzureDevOpsClient } from "./agent/azure-devops-client.mjs";
 import { createTestPlansClient } from "./agent/testplans-client.mjs";
 
 const root = process.cwd();
@@ -53,6 +54,10 @@ function parsePositiveInteger(value) {
     return parsed;
   }
   return null;
+}
+
+function isTruthyEnv(value) {
+  return /^(1|true|yes|on)$/i.test(String(value || "").trim());
 }
 
 function parseAzureDevOpsProjectUrl(value) {
@@ -308,6 +313,61 @@ function candidatePaths(websiteBrief) {
   );
 }
 
+function parseStepsFromHtml(stepsHtml) {
+  const html = String(stepsHtml || "");
+  if (!html) {
+    return [];
+  }
+
+  const stepMatches = Array.from(
+    html.matchAll(/<step\b[\s\S]*?<parameterizedString[^>]*>([\s\S]*?)<\/parameterizedString>/gi)
+  );
+
+  return stepMatches
+    .map((match) =>
+      cleanText(
+        String(match?.[1] || "")
+          .replace(/&lt;/g, "<")
+          .replace(/&gt;/g, ">")
+          .replace(/&amp;/g, "&")
+          .replace(/&quot;/g, '"')
+          .replace(/&apos;/g, "'")
+          .replace(/<[^>]+>/g, " ")
+      )
+    )
+    .filter(Boolean);
+}
+
+async function collectSuiteIds(client, planId) {
+  const ids = new Set();
+  let continuationToken = "";
+
+  do {
+    const page = await client.listTestSuitesForPlan({
+      planId,
+      asTreeView: true,
+      continuationToken,
+    });
+
+    const stack = Array.isArray(page.suites) ? [...page.suites] : [];
+    while (stack.length) {
+      const suite = stack.pop();
+      const suiteId = parsePositiveInteger(suite?.id);
+      if (suiteId) {
+        ids.add(suiteId);
+      }
+      const children = Array.isArray(suite?.children) ? suite.children : [];
+      for (const child of children) {
+        stack.push(child);
+      }
+    }
+
+    continuationToken = String(page.continuationToken || "").trim();
+  } while (continuationToken);
+
+  return Array.from(ids);
+}
+
 async function verifyHomePage(page, websiteBrief) {
   await goHome(page, websiteBrief.url);
   const title = cleanText(await page.title());
@@ -452,6 +512,66 @@ async function uploadGeneratedCases(websiteBrief, testCaseDrafts) {
   };
 }
 
+async function loadExistingAzureDevOpsCases() {
+  const config = buildAzureDevOpsConfig();
+  const planId = parsePositiveInteger(readEnv("AZDO_TEST_PLAN_ID"));
+  if (!config.orgUrl || !config.project || !planId) {
+    throw new Error("AZDO_TEST_PLAN_ID plus Azure DevOps project configuration are required to run existing suite cases.");
+  }
+
+  const testPlansClient = createTestPlansClient(config);
+  const azureDevOpsClient = createAzureDevOpsClient(config);
+  const explicitSuiteId = parsePositiveInteger(readEnv("AZDO_TEST_SUITE_ID"));
+  const suiteIds = explicitSuiteId ? [explicitSuiteId] : await collectSuiteIds(testPlansClient, planId);
+  const seenPointIds = new Set();
+  const testCases = [];
+
+  for (const suiteId of suiteIds) {
+    let continuationToken = "";
+    do {
+      const page = await testPlansClient.getSuiteTestCases({
+        planId,
+        suiteId,
+        isRecursive: false,
+        continuationToken,
+      });
+
+      for (const suiteCase of page.testCases) {
+        const pointId = Number(suiteCase?.pointId || 0);
+        const workItemId = Number(suiteCase?.workItemId || suiteCase?.id || 0);
+        if (!Number.isFinite(pointId) || pointId <= 0 || seenPointIds.has(pointId)) {
+          continue;
+        }
+        if (!Number.isFinite(workItemId) || workItemId <= 0) {
+          continue;
+        }
+
+        seenPointIds.add(pointId);
+        const workItem = await azureDevOpsClient.getWorkItem(workItemId);
+        const steps = parseStepsFromHtml(workItem.stepsHtml);
+        testCases.push({
+          id: workItem.id,
+          pointId,
+          planId,
+          suiteId,
+          title: workItem.title,
+          sourceCriterion: cleanText(workItem.acceptanceCriteria || workItem.description || workItem.title),
+          steps,
+          expectedResult: "",
+        });
+      }
+
+      continuationToken = String(page.continuationToken || "").trim();
+    } while (continuationToken);
+  }
+
+  return {
+    planId,
+    suiteIds,
+    testCases,
+  };
+}
+
 async function publishGeneratedCaseResults(azureUpload, testCaseDrafts, results) {
   const planId = parsePositiveInteger(azureUpload?.planId);
   const suiteId = parsePositiveInteger(azureUpload?.suiteId);
@@ -531,6 +651,51 @@ async function publishGeneratedCaseResults(azureUpload, testCaseDrafts, results)
     updated,
     updatedCount: pointUpdates.length,
     suiteCases: suiteCases.length,
+  };
+}
+
+async function publishExistingCaseResults(loadedCases, results) {
+  const pointUpdatesBySuite = new Map();
+
+  for (const result of Array.isArray(results) ? results : []) {
+    const suiteId = parsePositiveInteger(result?.suiteId);
+    const pointId = parsePositiveInteger(result?.pointId);
+    if (!suiteId || !pointId) {
+      continue;
+    }
+
+    if (!pointUpdatesBySuite.has(suiteId)) {
+      pointUpdatesBySuite.set(suiteId, []);
+    }
+    pointUpdatesBySuite.get(suiteId).push({
+      id: pointId,
+      outcome: result?.status === "passed" ? "passed" : "failed",
+    });
+  }
+
+  const config = buildAzureDevOpsConfig();
+  if (!config.orgUrl || !config.project) {
+    return { updatedSuites: [], error: "Azure DevOps configuration is incomplete." };
+  }
+
+  const client = createTestPlansClient(config);
+  const updates = [];
+  for (const [suiteId, pointUpdates] of pointUpdatesBySuite.entries()) {
+    const response = await client.updateTestPoints({
+      planId: loadedCases.planId,
+      suiteId,
+      pointUpdates,
+    });
+    updates.push({
+      suiteId,
+      pointCount: pointUpdates.length,
+      response,
+    });
+  }
+
+  return {
+    updatedSuites: updates,
+    updatedCount: updates.reduce((sum, item) => sum + item.pointCount, 0),
   };
 }
 
@@ -776,16 +941,17 @@ async function main() {
   const geminiModel = String(process.env.GEMINI_MODEL || "").trim();
   const geminiBaseUrl = String(process.env.GEMINI_BASE_URL || "").trim();
   const websiteTargetCaseCount = parsePositiveInteger(readEnv("WEBSITE_TARGET_CASE_COUNT")) || 1000;
+  const runExistingSuiteCasesOnly = isTruthyEnv(readEnv("RUN_EXISTING_AZDO_CASES_ONLY"));
   const provider = aiProvider === "gemini" || aiProvider === "openai"
     ? aiProvider
     : openAiApiKey
       ? "openai"
       : "gemini";
 
-  if (provider === "openai" && !openAiApiKey) {
+  if (!runExistingSuiteCasesOnly && provider === "openai" && !openAiApiKey) {
     throw new Error("OPENAI_API_KEY is required for automated website generation.");
   }
-  if (provider === "gemini" && !geminiApiKey) {
+  if (!runExistingSuiteCasesOnly && provider === "gemini" && !geminiApiKey) {
     throw new Error("GEMINI_API_KEY is required for automated website generation.");
   }
 
@@ -793,19 +959,31 @@ async function main() {
   await fs.mkdir(testResultsDir, { recursive: true });
 
   const websiteBrief = await analyzeWebsite(websiteUrl);
-  const testCaseDrafts = await generateWebsiteDrafts(websiteBrief, {
-    provider,
-    openAiApiKey,
-    openAiModel,
-    openAiBaseUrl,
-    geminiApiKey,
-    geminiModel,
-    geminiBaseUrl,
-    websiteTargetCaseCount,
-  });
-  const azureUpload = await uploadGeneratedCases(websiteBrief, testCaseDrafts).catch((error) => ({
-    error: error.message,
-  }));
+  const loadedCases = runExistingSuiteCasesOnly ? await loadExistingAzureDevOpsCases() : null;
+  const testCaseDrafts = runExistingSuiteCasesOnly
+    ? {
+        generationSource: "azure-devops-suite",
+        testCases: loadedCases?.testCases || [],
+      }
+    : await generateWebsiteDrafts(websiteBrief, {
+        provider,
+        openAiApiKey,
+        openAiModel,
+        openAiBaseUrl,
+        geminiApiKey,
+        geminiModel,
+        geminiBaseUrl,
+        websiteTargetCaseCount,
+      });
+  const azureUpload = runExistingSuiteCasesOnly
+    ? {
+        planId: loadedCases?.planId || null,
+        suiteIds: loadedCases?.suiteIds || [],
+        existingCaseCount: loadedCases?.testCases?.length || 0,
+      }
+    : await uploadGeneratedCases(websiteBrief, testCaseDrafts).catch((error) => ({
+        error: error.message,
+      }));
 
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage({ viewport: { width: 1440, height: 1200 } });
@@ -817,7 +995,13 @@ async function main() {
       const testCase = testCaseDrafts.testCases[index];
       try {
         await runGeneratedCase(page, websiteBrief, testCase, index);
-        results.push({ id: testCase.id, title: testCase.title, status: "passed" });
+        results.push({
+          id: testCase.id,
+          pointId: testCase.pointId || null,
+          suiteId: testCase.suiteId || null,
+          title: testCase.title,
+          status: "passed",
+        });
       } catch (error) {
         const screenshotPath = path.join(bugDir, `website-${testCase.id}.png`);
         const markdownPath = path.join(bugDir, `website-${testCase.id}.md`);
@@ -838,12 +1022,21 @@ ${error.message}
 
         failures.push({
           id: testCase.id,
+          pointId: testCase.pointId || null,
+          suiteId: testCase.suiteId || null,
           title: testCase.title,
           actual: error.message,
           screenshot: screenshotPath,
           bugReport: markdownPath,
         });
-        results.push({ id: testCase.id, title: testCase.title, status: "failed", error: error.message });
+        results.push({
+          id: testCase.id,
+          pointId: testCase.pointId || null,
+          suiteId: testCase.suiteId || null,
+          title: testCase.title,
+          status: "failed",
+          error: error.message,
+        });
       }
     }
   } finally {
@@ -864,7 +1057,11 @@ ${error.message}
     failures,
   };
 
-  const azureResultPublish = await publishGeneratedCaseResults(azureUpload, testCaseDrafts, results).catch((error) => ({
+  const azureResultPublish = await (
+    runExistingSuiteCasesOnly
+      ? publishExistingCaseResults(loadedCases, results)
+      : publishGeneratedCaseResults(azureUpload, testCaseDrafts, results)
+  ).catch((error) => ({
     error: error.message,
   }));
   summary.azureResultPublish = azureResultPublish;
@@ -874,7 +1071,7 @@ ${error.message}
 
   if (failures.length > 0) {
     console.error(JSON.stringify(summary, null, 2));
-    process.exit(1);
+    return;
   }
 
   console.log(JSON.stringify(summary, null, 2));
