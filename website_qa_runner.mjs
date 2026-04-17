@@ -713,24 +713,48 @@ async function publishExistingCaseResults(loadedCases, results) {
     state: "InProgress",
   });
 
-  const startedAt = new Date();
-  const payload = executedResults.map((item) => ({
-    testCaseTitle: item.title,
-    outcome: item.status === "passed" ? "Passed" : "Failed",
-    state: "Completed",
-    automatedTestName: item.title,
-    comment: item.error || "",
-    startedDate: startedAt.toISOString(),
-    completedDate: new Date().toISOString(),
-    durationInMs: 0,
-    testCase: { id: parsePositiveInteger(item.id) },
-    testCaseRevision: parsePositiveInteger(item.rev) || 1,
-    testPlan: { id: planId },
-    testSuite: { id: parsePositiveInteger(item.suiteId) },
-    testPoint: { id: parsePositiveInteger(item.pointId) },
-  }));
+  const existingRunResults = [];
+  let continuationToken = "";
+  do {
+    const page = await client.getTestRunResults({
+      runId: testRun.id,
+      continuationToken,
+    });
+    existingRunResults.push(...(page.results || []));
+    continuationToken = String(page.continuationToken || "").trim();
+  } while (continuationToken);
 
-  await client.addTestResults({
+  const runResultIdByPointId = new Map();
+  for (const runResult of existingRunResults) {
+    const pointId = parsePositiveInteger(runResult?.testPoint?.id || runResult?.pointId);
+    const resultId = parsePositiveInteger(runResult?.id);
+    if (pointId && resultId) {
+      runResultIdByPointId.set(pointId, resultId);
+    }
+  }
+
+  const startedAt = new Date();
+  const payload = executedResults
+    .map((item) => {
+      const pointId = parsePositiveInteger(item.pointId);
+      const resultId = runResultIdByPointId.get(pointId);
+      if (!pointId || !resultId) {
+        return null;
+      }
+
+      return {
+        id: resultId,
+        outcome: item.status === "passed" ? "Passed" : "Failed",
+        state: "Completed",
+        comment: item.error || "",
+        startedDate: startedAt.toISOString(),
+        completedDate: new Date().toISOString(),
+        durationInMs: 0,
+      };
+    })
+    .filter(Boolean);
+
+  await client.updateTestResults({
     runId: testRun.id,
     results: payload,
   });

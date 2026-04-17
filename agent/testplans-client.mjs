@@ -490,6 +490,52 @@ export function createTestPlansClient(config) {
       return responses;
     },
 
+    async getTestRunResults({ runId, continuationToken = "" }) {
+      const url = new URL(`${orgUrl}/${encodeURIComponent(project)}/_apis/test/Runs/${encodeURIComponent(runId)}/results`);
+      url.searchParams.set("api-version", "7.1");
+      if (continuationToken) {
+        url.searchParams.set("continuationToken", String(continuationToken));
+      }
+
+      const { data, response } = await requestJsonWithMeta(url.toString());
+      const results = Array.isArray(data)
+        ? data
+        : Array.isArray(data?.value)
+          ? data.value
+          : [];
+
+      return {
+        results,
+        continuationToken:
+          data?.continuationToken ??
+          data?.continuationToken?.toString?.() ??
+          response?.headers?.get?.("x-ms-continuationtoken") ??
+          null,
+      };
+    },
+
+    async updateTestResults({ runId, results }) {
+      const payload = Array.isArray(results) ? results.filter(Boolean) : [];
+      if (!payload.length) {
+        return [];
+      }
+
+      const url = new URL(`${orgUrl}/${encodeURIComponent(project)}/_apis/test/Runs/${encodeURIComponent(runId)}/results`);
+      url.searchParams.set("api-version", "7.1");
+
+      const responses = [];
+      for (const chunk of chunkArray(payload, 100)) {
+        responses.push(
+          await requestJson(url.toString(), {
+            method: "PATCH",
+            body: JSON.stringify(chunk),
+          })
+        );
+      }
+
+      return responses;
+    },
+
     async updateTestRun({ runId, state = "Completed", completedDate = new Date().toISOString(), comment = "" }) {
       const url = new URL(`${orgUrl}/${encodeURIComponent(project)}/_apis/test/runs/${encodeURIComponent(runId)}`);
       url.searchParams.set("api-version", "7.1");
