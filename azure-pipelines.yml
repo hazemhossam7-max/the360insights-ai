@@ -34,8 +34,9 @@ steps:
 
 - ${{ if ne(parameters.websiteUrl, '') }}:
   - script: node website_qa_runner.mjs "${{ parameters.websiteUrl }}"
-    displayName: "Run website generation and automation"
+    displayName: "Run existing Azure DevOps website suite cases"
     env:
+      RUN_EXISTING_AZDO_CASES_ONLY: "true"
       AZDO_PROJECT_URL: $(AZDO_PROJECT_URL)
       OPENAI_API_KEY: $(OPENAI_API_KEY)
       OPENAI_MODEL: $(OPENAI_MODEL)
@@ -49,7 +50,6 @@ steps:
       SYSTEM_ACCESSTOKEN: $(System.AccessToken)
       AZDO_TEST_PLAN_ID: $(AZDO_TEST_PLAN_ID)
       AZDO_TEST_SUITE_ID: $(AZDO_TEST_SUITE_ID)
-      RUN_EXISTING_AZDO_CASES_ONLY: "true"
 
 - script: |
     mkdir -p "$(Build.SourcesDirectory)/bug_reports"
@@ -64,7 +64,7 @@ steps:
     testResultsFormat: "JUnit"
     testResultsFiles: "$(Build.SourcesDirectory)/test-results/junit.xml"
     failTaskOnFailedTests: false
-    testRunTitle: "Website Automation"
+    testRunTitle: "Existing Azure DevOps Website Suite Automation"
 
 - task: PublishPipelineArtifact@1
   displayName: "Publish suite bug reports"

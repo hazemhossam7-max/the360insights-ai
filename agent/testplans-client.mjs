@@ -396,5 +396,64 @@ export function createTestPlansClient(config) {
         errors,
       };
     },
+
+    async createTestRun({ name, planId, pointIds, automated = true, state = "InProgress" }) {
+      const ids = (pointIds || [])
+        .map((value) => Number(value))
+        .filter((value) => Number.isFinite(value) && value > 0);
+
+      const url = new URL(`${orgUrl}/${encodeURIComponent(project)}/_apis/test/runs`);
+      url.searchParams.set("api-version", "7.1");
+
+      return requestJson(url.toString(), {
+        method: "POST",
+        body: JSON.stringify({
+          name,
+          automated,
+          isAutomated: automated,
+          state,
+          plan: {
+            id: Number(planId),
+          },
+          pointIds: ids,
+        }),
+      });
+    },
+
+    async addTestResults({ runId, results }) {
+      const payload = Array.isArray(results) ? results.filter(Boolean) : [];
+      if (!payload.length) {
+        return [];
+      }
+
+      const url = new URL(`${orgUrl}/${encodeURIComponent(project)}/_apis/test/Runs/${encodeURIComponent(runId)}/results`);
+      url.searchParams.set("api-version", "7.1");
+
+      const responses = [];
+      for (const chunk of chunkArray(payload, 100)) {
+        responses.push(
+          await requestJson(url.toString(), {
+            method: "POST",
+            body: JSON.stringify(chunk),
+          })
+        );
+      }
+
+      return responses;
+    },
+
+    async updateTestRun({ runId, state = "Completed", completedDate = new Date().toISOString(), comment = "" }) {
+      const url = new URL(`${orgUrl}/${encodeURIComponent(project)}/_apis/test/runs/${encodeURIComponent(runId)}`);
+      url.searchParams.set("api-version", "7.1");
+
+      return requestJson(url.toString(), {
+        method: "PATCH",
+        body: JSON.stringify({
+          state,
+          completedDate,
+          comment,
+        }),
+      });
+    },
   };
 }
