@@ -759,6 +759,38 @@ async function publishExistingCaseResults(loadedCases, results) {
     results: payload,
   });
 
+  // Progress report is driven by test point outcomes, so we also update
+  // the executed points in their originating suites after the run results land.
+  const updatesBySuite = new Map();
+  for (const item of executedResults) {
+    const suiteId = parsePositiveInteger(item.suiteId);
+    const pointId = parsePositiveInteger(item.pointId);
+    if (!suiteId || !pointId) {
+      continue;
+    }
+
+    if (!updatesBySuite.has(suiteId)) {
+      updatesBySuite.set(suiteId, []);
+    }
+
+    updatesBySuite.get(suiteId).push({
+      id: pointId,
+      outcome: item.status === "passed" ? "passed" : "failed",
+    });
+  }
+
+  const pointUpdateResults = [];
+  for (const [suiteId, pointUpdates] of updatesBySuite.entries()) {
+    pointUpdateResults.push({
+      suiteId,
+      ...(await client.updateTestPoints({
+        planId,
+        suiteId,
+        pointUpdates,
+      })),
+    });
+  }
+
   await client.updateTestRun({
     runId: testRun.id,
     state: "Completed",
@@ -770,6 +802,7 @@ async function publishExistingCaseResults(loadedCases, results) {
     runId: parsePositiveInteger(testRun.id),
     publishedResults: payload.length,
     suiteIds: Array.from(suiteIds),
+    pointUpdates: pointUpdateResults,
   };
 }
 
