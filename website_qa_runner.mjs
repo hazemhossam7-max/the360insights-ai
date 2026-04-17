@@ -195,16 +195,15 @@ async function loadExistingAzureDevOpsCases() {
   for (const suiteId of suiteIds) {
     let continuationToken = "";
     do {
-      const page = await testPlansClient.getSuiteTestCases({
+      const page = await testPlansClient.getSuiteTestPoints({
         planId,
         suiteId,
-        isRecursive: false,
         continuationToken,
       });
 
-      for (const suiteCase of page.testCases || []) {
-        const workItemId = parsePositiveInteger(suiteCase?.workItemId || suiteCase?.id);
-        const pointId = parsePositiveInteger(suiteCase?.pointId);
+      for (const suitePoint of page.testPoints || []) {
+        const workItemId = parsePositiveInteger(suitePoint?.workItemId);
+        const pointId = parsePositiveInteger(suitePoint?.pointId || suitePoint?.id);
         if (!workItemId || !pointId || seen.has(`${suiteId}:${pointId}`)) {
           continue;
         }
@@ -212,7 +211,7 @@ async function loadExistingAzureDevOpsCases() {
         seen.add(`${suiteId}:${pointId}`);
         const workItem = await workItemsClient.getWorkItem(workItemId);
         const parsedSteps = parseStepsFromHtml(workItem.stepsHtml);
-        const title = cleanText(workItem.title || suiteCase.title || `Test Case ${workItemId}`);
+        const title = cleanText(workItem.title || suitePoint.title || `Test Case ${workItemId}`);
 
         cases.push({
           id: workItemId,

@@ -63,6 +63,26 @@ function normalizeSuiteTestCase(item) {
   };
 }
 
+function normalizeSuitePoint(item) {
+  const pointId = Number(item?.id || item?.pointId);
+  const testCase = item?.testCase || item?.testCaseReference || item?.workItem || {};
+  const workItemId = Number(testCase?.id || item?.workItemId || item?.testCaseId);
+
+  if (!Number.isFinite(pointId) || pointId <= 0 || !Number.isFinite(workItemId) || workItemId <= 0) {
+    return null;
+  }
+
+  return {
+    id: pointId,
+    pointId,
+    title: String(testCase?.name || testCase?.title || item?.testCaseTitle || item?.title || "").trim(),
+    workItemId,
+    configurationId: Number(item?.configuration?.id || item?.configurationId || 0) || null,
+    suiteId: Number(item?.suite?.id || item?.suiteId || 0) || null,
+    raw: item,
+  };
+}
+
 export function createTestPlansClient(config) {
   const orgUrl = trimTrailingSlash(config.orgUrl);
   const project = String(config.project || "").trim();
@@ -213,6 +233,34 @@ export function createTestPlansClient(config) {
 
       return {
         testCases: items.map(normalizeSuiteTestCase).filter(Boolean),
+        continuationToken:
+          data?.continuationToken ??
+          data?.continuationToken?.toString?.() ??
+          response?.headers?.get?.("x-ms-continuationtoken") ??
+          null,
+      };
+    },
+
+    async getSuiteTestPoints({ planId, suiteId, continuationToken = "" }) {
+      const url = new URL(
+        `${orgUrl}/${encodeURIComponent(project)}/_apis/test/Plans/${encodeURIComponent(planId)}/Suites/${encodeURIComponent(suiteId)}/points`
+      );
+      url.searchParams.set("api-version", "7.1");
+      if (continuationToken) {
+        url.searchParams.set("continuationToken", String(continuationToken));
+      }
+
+      const { data, response } = await requestJsonWithMeta(url.toString());
+      const items = Array.isArray(data)
+        ? data
+        : Array.isArray(data?.value)
+          ? data.value
+          : Array.isArray(data?.points)
+            ? data.points
+            : [];
+
+      return {
+        testPoints: items.map(normalizeSuitePoint).filter(Boolean),
         continuationToken:
           data?.continuationToken ??
           data?.continuationToken?.toString?.() ??
