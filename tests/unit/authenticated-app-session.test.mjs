@@ -171,6 +171,8 @@ const cases = [
       assert.equal(authConfig.requireAuth, true);
       assert.equal(authConfig.loginUrl, "https://example.com/login");
       assert.equal(authConfig.maxDiscoveryPages, 1);
+      assert.equal(authConfig.redirectTimeoutMs, 45000);
+      assert.equal(authConfig.forcedNavigationTimeoutMs, 22500);
       assert.equal(authConfig.usernameSelectors[0], "input[data-qa='email']");
       assert.equal(authConfig.passwordSelectors[0], "input[data-qa='password']");
       assert.equal(authConfig.submitSelectors[0], "button[data-qa='submit']");
@@ -201,6 +203,22 @@ const cases = [
         }),
         []
       );
+    },
+  },
+  {
+    name: "buildAuthConfig accepts redirect timeout overrides",
+    run() {
+      const authConfig = buildAuthConfig("https://example.com/app", {
+        APP_REQUIRE_AUTH: "true",
+        APP_LOGIN_URL: "https://example.com/login",
+        APP_USERNAME: "hazem@example.com",
+        APP_PASSWORD: "secret",
+        APP_AUTH_REDIRECT_TIMEOUT_MS: "60000",
+        APP_AUTH_FORCED_NAVIGATION_TIMEOUT_MS: "15000",
+      });
+
+      assert.equal(authConfig.redirectTimeoutMs, 60000);
+      assert.equal(authConfig.forcedNavigationTimeoutMs, 15000);
     },
   },
   {
@@ -320,6 +338,61 @@ const cases = [
 
       assert.equal(session.authenticated, true);
       assert.equal(session.loginAttempted, true);
+      assert.equal(page.gotoHistory.at(-1), "https://example.com/app");
+      assert.deepEqual(session.sidebarModules, ["Dashboard", "Reports"]);
+    },
+  },
+  {
+    name: "ensureAuthenticatedSession forces navigation even when a loose success marker appears before leaving login",
+    async run() {
+      const authConfig = createAuthConfig();
+      const page = new FakePage({
+        loginUrl: authConfig.loginUrl,
+        websiteUrl: authConfig.websiteUrl,
+        postLoginUrl: authConfig.postLoginUrl,
+        scenes: {
+          blank: {
+            url: "about:blank",
+            title: "",
+            elements: {},
+          },
+          login: {
+            url: "https://example.com/login",
+            title: "Sign in",
+            afterSubmit: "redirecting-with-marker",
+            onLandingGoto: "authenticated",
+            elements: {
+              'input[type="email"]': { visible: true },
+              'input[type="password"]': { visible: true },
+              'button[type="submit"]': { visible: true, action: "submit" },
+            },
+          },
+          "redirecting-with-marker": {
+            url: "https://example.com/login",
+            title: "Sign in",
+            onLandingGoto: "authenticated",
+            redirectTexts: ["Welcome back. Redirecting to dashboard."],
+            elements: {
+              'input[type="email"]': { visible: true },
+              'input[type="password"]': { visible: true },
+              'button[type="submit"]': { visible: true, action: "submit" },
+              nav: { visible: true, text: "Welcome back. Redirecting to dashboard." },
+            },
+          },
+          authenticated: {
+            url: "https://example.com/app",
+            title: "Dashboard",
+            sidebarModules: ["Dashboard", "Reports"],
+            elements: {
+              nav: { visible: true, text: "Dashboard Reports" },
+            },
+          },
+        },
+      });
+
+      const session = await ensureAuthenticatedSession(page, authConfig);
+
+      assert.equal(session.authenticated, true);
       assert.equal(page.gotoHistory.at(-1), "https://example.com/app");
       assert.deepEqual(session.sidebarModules, ["Dashboard", "Reports"]);
     },

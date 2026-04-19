@@ -19,6 +19,14 @@ function parseBoolean(value, defaultValue = false) {
   return ["1", "true", "yes", "on"].includes(normalized);
 }
 
+function parsePositiveInteger(value, defaultValue) {
+  const parsed = Number(value);
+  if (Number.isFinite(parsed) && parsed > 0) {
+    return Math.round(parsed);
+  }
+  return defaultValue;
+}
+
 function unique(values) {
   return Array.from(new Set((values || []).map((item) => cleanText(item)).filter(Boolean)));
 }
@@ -125,6 +133,11 @@ export function buildAuthConfig(baseUrl, env = process.env) {
   const maxDiscoveryPages = Number.isFinite(parsedMaxDiscoveryPages)
     ? Math.max(1, parsedMaxDiscoveryPages)
     : 8;
+  const redirectTimeoutMs = parsePositiveInteger(env.APP_AUTH_REDIRECT_TIMEOUT_MS, 45000);
+  const forcedNavigationTimeoutMs = parsePositiveInteger(
+    env.APP_AUTH_FORCED_NAVIGATION_TIMEOUT_MS,
+    Math.max(10000, Math.round(redirectTimeoutMs / 2))
+  );
 
   return {
     requireAuth,
@@ -150,6 +163,8 @@ export function buildAuthConfig(baseUrl, env = process.env) {
       ...DEFAULT_SUCCESS_SELECTORS,
     ]),
     maxDiscoveryPages,
+    redirectTimeoutMs,
+    forcedNavigationTimeoutMs,
   };
 }
 
@@ -470,7 +485,7 @@ export async function ensureAuthenticatedSession(page, authConfig, options = {})
 
   if (authConfig.postLoginUrl) {
     await page.waitForURL(new RegExp(escapeRegExp(authConfig.postLoginUrl)), {
-      timeout: 15000,
+      timeout: authConfig.redirectTimeoutMs,
     }).catch(() => {});
   }
 
@@ -478,20 +493,21 @@ export async function ensureAuthenticatedSession(page, authConfig, options = {})
   await page.waitForLoadState("networkidle").catch(() => {});
   await page.waitForTimeout(1000).catch(() => {});
 
-  let validated = await waitForAuthenticatedOutcome(page, authConfig, 20000);
-  if (!validated.authenticated && validated.redirectPending) {
-    validated = await waitForAuthenticatedOutcome(page, authConfig, 10000);
-  }
+  let validated = await waitForAuthenticatedOutcome(page, authConfig, authConfig.redirectTimeoutMs);
 
   let forcedNavigationAttempted = false;
-  if (!validated.authenticated && validated.redirectPending && validated.stillOnLogin) {
+  if (validated.redirectPending && validated.stillOnLogin) {
     forcedNavigationAttempted = true;
     const landingUrl = cleanText(authConfig.postLoginUrl || authConfig.websiteUrl);
     if (landingUrl) {
       await page.goto(landingUrl, { waitUntil: "domcontentloaded" }).catch(() => {});
       await page.waitForLoadState("networkidle").catch(() => {});
       await page.waitForTimeout(3000).catch(() => {});
-      validated = await waitForAuthenticatedOutcome(page, authConfig, 5000);
+      validated = await waitForAuthenticatedOutcome(
+        page,
+        authConfig,
+        authConfig.forcedNavigationTimeoutMs
+      );
     }
   }
 
