@@ -67,6 +67,7 @@ async function main() {
       postLoginUrl: authConfig.postLoginUrl,
       classification: error?.classification || "authentication_access_issue",
       error: cleanText(error?.message || error),
+      transitionState: cleanText(error?.details?.transitionState || ""),
       details: error?.details || {},
       screenshot: screenshotPath,
       checkedAt: new Date().toISOString(),

@@ -110,6 +110,12 @@ const DEFAULT_SUCCESS_SELECTORS = [
   'text=Dashboard',
 ];
 
+const REDIRECT_PENDING_PHRASES = [
+  "welcome back",
+  "redirecting to dashboard",
+  "redirecting",
+];
+
 export function buildAuthConfig(baseUrl, env = process.env) {
   const websiteUrl = cleanText(baseUrl);
   const requireAuth = parseBoolean(env.APP_REQUIRE_AUTH, true);
@@ -204,7 +210,60 @@ async function collectVisibleMarkerTexts(page, selectors) {
   return unique(seen);
 }
 
-async function pageLooksLikeLogin(page, authConfig) {
+async function detectRedirectPendingSuccess(page) {
+  const texts = await page
+    .evaluate((phrases) => {
+      const selectors = [
+        '[role="alert"]',
+        '[aria-live="assertive"]',
+        '[aria-live="polite"]',
+        '[data-testid*="toast"]',
+        '[data-sonner-toast]',
+        '[class*="toast"]',
+        '[class*="notification"]',
+      ];
+      const values = [];
+
+      for (const selector of selectors) {
+        for (const node of document.querySelectorAll(selector)) {
+          const text = (node.innerText || node.textContent || "").replace(/\s+/g, " ").trim();
+          if (text) {
+            values.push(text);
+          }
+        }
+      }
+
+      const bodyText = (document.body?.innerText || "").replace(/\s+/g, " ").trim();
+      if (bodyText) {
+        for (const phrase of phrases) {
+          if (bodyText.toLowerCase().includes(String(phrase).toLowerCase())) {
+            values.push(bodyText.slice(0, 600));
+            break;
+          }
+        }
+      }
+
+      return Array.from(new Set(values)).slice(0, 10);
+    }, REDIRECT_PENDING_PHRASES)
+    .catch(() => []);
+
+  const matchedTexts = unique(
+    texts.filter((text) =>
+      REDIRECT_PENDING_PHRASES.some((phrase) => cleanText(text).toLowerCase().includes(phrase))
+    )
+  ).slice(0, 5);
+
+  return {
+    active: matchedTexts.length > 0,
+    texts: matchedTexts,
+  };
+}
+
+async function pageLooksLikeLogin(page, authConfig, options = {}) {
+  if (options.ignoreRedirectPending) {
+    return false;
+  }
+
   const passwordField = await firstVisibleLocator(page, authConfig.passwordSelectors);
   if (passwordField) {
     return true;
@@ -221,6 +280,47 @@ async function pageLooksLikeLogin(page, authConfig) {
   }
 
   return false;
+}
+
+async function waitForAuthenticatedOutcome(page, authConfig, timeoutMs) {
+  const startedAt = Date.now();
+  let lastState = {
+    authenticated: false,
+    markerTexts: [],
+    sidebarModules: [],
+    redirectPending: false,
+    redirectPendingTexts: [],
+    currentUrl: page.url(),
+    currentTitle: "",
+    stillOnLogin: true,
+  };
+
+  while (Date.now() - startedAt < timeoutMs) {
+    const authState = await captureAuthenticatedUiState(page, authConfig);
+    const redirectPending = await detectRedirectPendingSuccess(page);
+    const stillOnLogin = await pageLooksLikeLogin(page, authConfig, {
+      ignoreRedirectPending: redirectPending.active,
+    });
+
+    lastState = {
+      ...authState,
+      redirectPending: redirectPending.active,
+      redirectPendingTexts: redirectPending.texts,
+      stillOnLogin,
+    };
+
+    if (authState.authenticated && !stillOnLogin) {
+      return lastState;
+    }
+
+    if (redirectPending.active) {
+      return lastState;
+    }
+
+    await page.waitForTimeout(500).catch(() => {});
+  }
+
+  return lastState;
 }
 
 export async function captureAuthenticatedUiState(page, authConfig) {
@@ -274,7 +374,7 @@ async function submitLogin(page, authConfig) {
   ]);
 }
 
-async function collectFailureDiagnostics(page, authConfig) {
+async function collectFailureDiagnostics(page, authConfig, transitionState = "") {
   const authState = await captureAuthenticatedUiState(page, authConfig).catch(() => ({
     authenticated: false,
     markerTexts: [],
@@ -307,6 +407,11 @@ async function collectFailureDiagnostics(page, authConfig) {
     })
     .catch(() => []);
 
+  const redirectPending = await detectRedirectPendingSuccess(page).catch(() => ({
+    active: false,
+    texts: [],
+  }));
+
   const bodyPreview = await page
     .locator("body")
     .innerText()
@@ -318,8 +423,10 @@ async function collectFailureDiagnostics(page, authConfig) {
     currentTitle: cleanText(await page.title().catch(() => "")),
     markerTexts: authState.markerTexts || [],
     sidebarModules: authState.sidebarModules || [],
+    redirectPendingTexts: redirectPending.texts || [],
     errorTexts,
     bodyPreview,
+    transitionState: cleanText(transitionState || "authenticated_shell_missing"),
   };
 }
 
@@ -354,6 +461,7 @@ export async function ensureAuthenticatedSession(page, authConfig, options = {})
       "The login form could not be found. Provide APP_USERNAME_SELECTOR / APP_PASSWORD_SELECTOR or verify the login page is reachable.",
       {
         currentUrl: page.url(),
+        transitionState: "login_form_not_found",
       }
     );
   }
@@ -370,13 +478,34 @@ export async function ensureAuthenticatedSession(page, authConfig, options = {})
 
   await page.waitForLoadState("domcontentloaded").catch(() => {});
   await page.waitForLoadState("networkidle").catch(() => {});
-  await page.waitForTimeout(3000).catch(() => {});
+  await page.waitForTimeout(1000).catch(() => {});
 
-  const validated = await captureAuthenticatedUiState(page, authConfig);
-  if (!validated.authenticated || (await pageLooksLikeLogin(page, authConfig))) {
-    const diagnostics = await collectFailureDiagnostics(page, authConfig);
+  let validated = await waitForAuthenticatedOutcome(page, authConfig, 20000);
+  if (!validated.authenticated && validated.redirectPending) {
+    validated = await waitForAuthenticatedOutcome(page, authConfig, 10000);
+  }
+
+  let forcedNavigationAttempted = false;
+  if (!validated.authenticated && validated.redirectPending && validated.stillOnLogin) {
+    forcedNavigationAttempted = true;
+    const landingUrl = cleanText(authConfig.postLoginUrl || authConfig.websiteUrl);
+    if (landingUrl) {
+      await page.goto(landingUrl, { waitUntil: "domcontentloaded" }).catch(() => {});
+      await page.waitForLoadState("networkidle").catch(() => {});
+      await page.waitForTimeout(3000).catch(() => {});
+      validated = await waitForAuthenticatedOutcome(page, authConfig, 5000);
+    }
+  }
+
+  if (!validated.authenticated || validated.stillOnLogin) {
+    const transitionState = !validated.redirectPending
+      ? "authenticated_shell_missing"
+      : forcedNavigationAttempted
+        ? "redirect_stalled_on_login"
+        : "credentials_submitted_waiting_redirect";
+    const diagnostics = await collectFailureDiagnostics(page, authConfig, transitionState);
     throw new AuthenticationError(
-      `Login did not reach the authenticated application shell. URL=${diagnostics.currentUrl || "unknown"} TITLE=${diagnostics.currentTitle || "unknown"} ERRORS=${(diagnostics.errorTexts || []).join(" | ") || "none"} MARKERS=${(diagnostics.markerTexts || []).join(" | ") || "none"}`,
+      `Login did not reach the authenticated application shell. STATE=${diagnostics.transitionState || "unknown"} URL=${diagnostics.currentUrl || "unknown"} TITLE=${diagnostics.currentTitle || "unknown"} ERRORS=${(diagnostics.errorTexts || []).join(" | ") || "none"} MARKERS=${(diagnostics.markerTexts || []).join(" | ") || "none"} REDIRECT=${(diagnostics.redirectPendingTexts || []).join(" | ") || "none"}`,
       diagnostics
     );
   }
