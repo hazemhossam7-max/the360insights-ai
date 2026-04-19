@@ -19,7 +19,9 @@ parameters:
     default: "generate-grounded"
     values:
       - "generate-grounded"
+      - "generate-grounded-only"
       - "generate-openai"
+      - "generate-openai-only"
       - "run-existing-suite"
 
 variables:
@@ -155,7 +157,7 @@ stages:
 
     - task: PublishTestResults@2
       displayName: "Publish JUnit test results"
-      condition: succeededOrFailed()
+      condition: and(succeededOrFailed(), ne('${{ parameters.runMode }}', 'generate-grounded-only'), ne('${{ parameters.runMode }}', 'generate-openai-only'))
       inputs:
         testResultsFormat: "JUnit"
         testResultsFiles: "$(Build.SourcesDirectory)/test-results/junit.xml"

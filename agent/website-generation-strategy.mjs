@@ -7,11 +7,16 @@ function cleanText(value) {
 
 export function resolveWebsiteGenerationMode(value) {
   const normalized = cleanText(value);
-  if (["generate-openai", "openai", "ai"].includes(normalized)) {
+  if (["generate-openai", "generate-openai-only", "openai", "ai"].includes(normalized)) {
     return "openai";
   }
 
   return "grounded";
+}
+
+export function shouldExecuteGeneratedCases(value) {
+  const normalized = cleanText(value);
+  return !normalized.endsWith("-only");
 }
 
 export function shouldUseGroundedGenerator(websiteBrief, generationMode) {

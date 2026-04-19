@@ -16,7 +16,11 @@ import {
 } from "./agent/authenticated-app-session.mjs";
 import { generateGroundedWebsiteTestCases } from "./agent/grounded-website-testcases.mjs";
 import { classifyFailure, isRealBugClassification } from "./agent/failure-classifier.mjs";
-import { resolveWebsiteGenerationMode, shouldUseGroundedGenerator } from "./agent/website-generation-strategy.mjs";
+import {
+  resolveWebsiteGenerationMode,
+  shouldExecuteGeneratedCases,
+  shouldUseGroundedGenerator,
+} from "./agent/website-generation-strategy.mjs";
 
 const root = process.cwd();
 const bugDir = path.join(root, "bug_reports");
@@ -164,7 +168,9 @@ async function buildPageContext(page, authConfig) {
 }
 
 async function writeSummaryArtifacts(summary) {
-  await writeJunitReport(summary);
+  if (summary.execution?.executedGeneratedCases !== false) {
+    await writeJunitReport(summary);
+  }
   await fs.writeFile(reportPath, JSON.stringify(summary, null, 2), "utf8");
 }
 
@@ -1307,7 +1313,9 @@ async function main() {
   const geminiModel = String(process.env.GEMINI_MODEL || "").trim();
   const geminiBaseUrl = String(process.env.GEMINI_BASE_URL || "").trim();
   const websiteTargetCaseCount = parsePositiveInteger(readEnv("WEBSITE_TARGET_CASE_COUNT")) || 30;
-  const websiteGenerationMode = resolveWebsiteGenerationMode(readEnv("WEBSITE_CASE_GENERATOR"));
+  const websiteCaseGenerator = readEnv("WEBSITE_CASE_GENERATOR");
+  const websiteGenerationMode = resolveWebsiteGenerationMode(websiteCaseGenerator);
+  const executeGeneratedCases = shouldExecuteGeneratedCases(websiteCaseGenerator);
   const provider = aiProvider === "gemini" || aiProvider === "openai"
     ? aiProvider
     : openAiApiKey
@@ -1376,79 +1384,83 @@ async function main() {
         error: error.message,
       }));
 
-  try {
-    for (let index = 0; index < testCaseDrafts.testCases.length; index += 1) {
-      const testCase = testCaseDrafts.testCases[index];
-      try {
-        if (authConfig.requireAuth) {
-          await ensureAuthenticatedSession(page, authConfig, {
-            skipNavigation: true,
-            allowFreshLogin: false,
+  if (executeGeneratedCases || runExistingCasesOnly) {
+    try {
+      for (let index = 0; index < testCaseDrafts.testCases.length; index += 1) {
+        const testCase = testCaseDrafts.testCases[index];
+        try {
+          if (authConfig.requireAuth) {
+            await ensureAuthenticatedSession(page, authConfig, {
+              skipNavigation: true,
+              allowFreshLogin: false,
+            });
+          }
+
+          await runGeneratedCase(page, websiteBrief, testCase, index);
+          results.push({
+            id: testCase.id,
+            title: testCase.title,
+            status: "passed",
+            classification: "Passed",
+            pointId: testCase.pointId || null,
+            suiteId: testCase.suiteId || null,
+            planId: testCase.planId || null,
+            rev: testCase.rev || 1,
           });
-        }
+        } catch (error) {
+          const pageContext = await buildPageContext(page, authConfig);
+          const fingerprint = cleanText(
+            `${pageContext.url}::${pageContext.title}::${(pageContext.authMarkers || []).join("|")}::${(pageContext.sidebarModules || []).slice(0, 5).join("|")}`
+          );
+          const fingerprintCount = incrementCounter(screenshotFingerprints, fingerprint);
+          const classification = classifyFailure({
+            error,
+            pageContext,
+            authState: pageContext,
+            screenshotFingerprintCount: fingerprintCount,
+          });
+          incrementCounter(classificationCounts, classification);
 
-        await runGeneratedCase(page, websiteBrief, testCase, index);
-        results.push({
-          id: testCase.id,
-          title: testCase.title,
-          status: "passed",
-          classification: "Passed",
-          pointId: testCase.pointId || null,
-          suiteId: testCase.suiteId || null,
-          planId: testCase.planId || null,
-          rev: testCase.rev || 1,
-        });
-      } catch (error) {
-        const pageContext = await buildPageContext(page, authConfig);
-        const fingerprint = cleanText(
-          `${pageContext.url}::${pageContext.title}::${(pageContext.authMarkers || []).join("|")}::${(pageContext.sidebarModules || []).slice(0, 5).join("|")}`
-        );
-        const fingerprintCount = incrementCounter(screenshotFingerprints, fingerprint);
-        const classification = classifyFailure({
-          error,
-          pageContext,
-          authState: pageContext,
-          screenshotFingerprintCount: fingerprintCount,
-        });
-        incrementCounter(classificationCounts, classification);
+          const artifactPrefix = isRealBugClassification(classification) ? `website-${testCase.id}` : `diagnostic-${testCase.id}`;
+          const screenshotPath = path.join(bugDir, `${artifactPrefix}.png`);
+          const markdownPath = path.join(bugDir, `${artifactPrefix}.md`);
 
-        const artifactPrefix = isRealBugClassification(classification) ? `website-${testCase.id}` : `diagnostic-${testCase.id}`;
-        const screenshotPath = path.join(bugDir, `${artifactPrefix}.png`);
-        const markdownPath = path.join(bugDir, `${artifactPrefix}.md`);
+          await page.screenshot({ path: screenshotPath, fullPage: true }).catch(() => {});
+          await fs.writeFile(
+            markdownPath,
+            buildFailureMarkdown(
+              testCase,
+              {
+                actual: error.message,
+                classification,
+              },
+              pageContext
+            ),
+            "utf8"
+          );
 
-        await page.screenshot({ path: screenshotPath, fullPage: true }).catch(() => {});
-        await fs.writeFile(
-          markdownPath,
-          buildFailureMarkdown(
-            testCase,
-            {
-              actual: error.message,
-              classification,
-            },
-            pageContext
-          ),
-          "utf8"
-        );
+          failures.push({
+            id: testCase.id,
+            title: testCase.title,
+            actual: error.message,
+            classification,
+            screenshot: screenshotPath,
+            report: markdownPath,
+            pageContext,
+          });
 
-        failures.push({
-          id: testCase.id,
-          title: testCase.title,
-          actual: error.message,
-          classification,
-          screenshot: screenshotPath,
-          report: markdownPath,
-          pageContext,
-        });
+          results.push(buildBlockedResult(testCase, classification, error.message));
 
-        results.push(buildBlockedResult(testCase, classification, error.message));
-
-        if (classification === "Authentication/access issue") {
-          stopEarlyReason = error.message;
-          break;
+          if (classification === "Authentication/access issue") {
+            stopEarlyReason = error.message;
+            break;
+          }
         }
       }
+    } finally {
+      await browser.close();
     }
-  } finally {
+  } else {
     await browser.close();
   }
 
@@ -1484,6 +1496,8 @@ async function main() {
       discoveredPages: authDiscovery?.pages?.length || 0,
     },
     execution: {
+      executedGeneratedCases: executeGeneratedCases || runExistingCasesOnly,
+      generatedOnly: !runExistingCasesOnly && !executeGeneratedCases,
       stoppedEarly: Boolean(stopEarlyReason),
       stopReason: stopEarlyReason || "",
     },
@@ -1503,7 +1517,9 @@ async function main() {
   const azureResultPublish = await (
     runExistingCasesOnly
       ? publishExistingCaseResults(loadedCases, results)
-      : publishGeneratedCaseResults(azureUpload, testCaseDrafts, results)
+      : executeGeneratedCases
+        ? publishGeneratedCaseResults(azureUpload, testCaseDrafts, results)
+        : null
   ).catch((error) => ({
     error: error.message,
   }));

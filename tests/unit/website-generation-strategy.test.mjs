@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import {
   resolveWebsiteGenerationMode,
+  shouldExecuteGeneratedCases,
   shouldUseGroundedGenerator,
 } from "../../agent/website-generation-strategy.mjs";
 
@@ -16,8 +17,17 @@ const cases = [
     name: "resolveWebsiteGenerationMode recognizes openai generation values",
     run() {
       assert.equal(resolveWebsiteGenerationMode("generate-openai"), "openai");
+      assert.equal(resolveWebsiteGenerationMode("generate-openai-only"), "openai");
       assert.equal(resolveWebsiteGenerationMode("openai"), "openai");
       assert.equal(resolveWebsiteGenerationMode("ai"), "openai");
+    },
+  },
+  {
+    name: "shouldExecuteGeneratedCases disables execution for only modes",
+    run() {
+      assert.equal(shouldExecuteGeneratedCases("generate-openai-only"), false);
+      assert.equal(shouldExecuteGeneratedCases("generate-grounded-only"), false);
+      assert.equal(shouldExecuteGeneratedCases("generate-openai"), true);
     },
   },
   {
