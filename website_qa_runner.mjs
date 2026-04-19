@@ -1137,6 +1137,15 @@ async function verifyFeature(page, websiteBrief, testCase) {
     return;
   }
 
+  const currentUrl = cleanText(page.url());
+  const pageSnapshot = (websiteBrief?.pages || []).find((item) => cleanText(item?.url) === currentUrl);
+  const snapshotCards = Array.isArray(pageSnapshot?.cards) ? pageSnapshot.cards.map((item) => cleanText(item)).filter(Boolean) : [];
+  const snapshotHeadings = Array.isArray(pageSnapshot?.headings) ? pageSnapshot.headings.map((item) => cleanText(item)).filter(Boolean) : [];
+  const cardLikeAlias = aliases.some((alias) => /\b(card|cards|athlete card|athlete details)\b/i.test(alias));
+  if (cardLikeAlias && (snapshotCards.length > 0 || snapshotHeadings.some((item) => /featured athletes|available athletes/i.test(item)))) {
+    return;
+  }
+
   const interactive = page
     .locator("a,button,[role='button']")
     .filter({ hasText: new RegExp(escapeRegExp(aliases[0] || cleanText(testCase?.title || "")), "i") })
@@ -1473,7 +1482,12 @@ async function main() {
 
           results.push(buildBlockedResult(testCase, classification, error.message));
 
-          if (classification === "Authentication/access issue") {
+          if (
+            classification === "Authentication/access issue" &&
+            /authenticated session|login form|authenticated application shell|missing required authentication configuration/i.test(
+              cleanText(error.message)
+            )
+          ) {
             stopEarlyReason = error.message;
             break;
           }

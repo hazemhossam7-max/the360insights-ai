@@ -14,8 +14,13 @@ export function classifyFailure({ error, pageContext, authState, screenshotFinge
   const currentUrl = cleanText(pageContext?.url || "").toLowerCase();
   const currentTitle = cleanText(pageContext?.title || "").toLowerCase();
   const reachedProtectedPage = Boolean(pageContext?.reachedProtectedPage);
+  const explicitlyUnauthenticated = authState?.authenticated === false;
 
-  if (error?.classification === "authentication_access_issue" || !authState?.authenticated) {
+  if (error?.classification === "authentication_access_issue") {
+    return "Authentication/access issue";
+  }
+
+  if (explicitlyUnauthenticated && !reachedProtectedPage) {
     return "Authentication/access issue";
   }
 
