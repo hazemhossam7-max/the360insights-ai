@@ -12,6 +12,7 @@ import {
 const root = process.cwd();
 const testResultsDir = path.join(root, "test-results");
 const outputPath = path.join(testResultsDir, "auth-smoke.json");
+const screenshotPath = path.join(testResultsDir, "auth-smoke-failure.png");
 
 function cleanText(value) {
   return String(value || "")
@@ -58,6 +59,7 @@ async function main() {
     await fs.writeFile(outputPath, JSON.stringify(result, null, 2), "utf8");
     console.log(JSON.stringify(result, null, 2));
   } catch (error) {
+    await page.screenshot({ path: screenshotPath, fullPage: true }).catch(() => {});
     const failure = {
       status: "failed",
       websiteUrl,
@@ -65,6 +67,8 @@ async function main() {
       postLoginUrl: authConfig.postLoginUrl,
       classification: error?.classification || "authentication_access_issue",
       error: cleanText(error?.message || error),
+      details: error?.details || {},
+      screenshot: screenshotPath,
       checkedAt: new Date().toISOString(),
     };
     await fs.writeFile(outputPath, JSON.stringify(failure, null, 2), "utf8");

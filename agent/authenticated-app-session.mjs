@@ -23,6 +23,10 @@ function unique(values) {
   return Array.from(new Set((values || []).map((item) => cleanText(item)).filter(Boolean)));
 }
 
+function escapeRegExp(value) {
+  return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 function normalizeInternalHref(href, baseUrl) {
   try {
     const target = new URL(href, baseUrl);
@@ -270,6 +274,55 @@ async function submitLogin(page, authConfig) {
   ]);
 }
 
+async function collectFailureDiagnostics(page, authConfig) {
+  const authState = await captureAuthenticatedUiState(page, authConfig).catch(() => ({
+    authenticated: false,
+    markerTexts: [],
+    sidebarModules: [],
+    currentUrl: page.url(),
+    currentTitle: "",
+  }));
+
+  const errorTexts = await page
+    .evaluate(() => {
+      const selectors = [
+        '[role="alert"]',
+        '[aria-live="assertive"]',
+        '[aria-live="polite"]',
+        '[class*="error"]',
+        '[class*="alert"]',
+        '[class*="warning"]',
+        '[data-testid*="error"]',
+      ];
+      const values = [];
+      for (const selector of selectors) {
+        for (const node of document.querySelectorAll(selector)) {
+          const text = (node.innerText || node.textContent || "").replace(/\s+/g, " ").trim();
+          if (text) {
+            values.push(text);
+          }
+        }
+      }
+      return Array.from(new Set(values)).slice(0, 10);
+    })
+    .catch(() => []);
+
+  const bodyPreview = await page
+    .locator("body")
+    .innerText()
+    .then((text) => cleanText(text).slice(0, 1200))
+    .catch(() => "");
+
+  return {
+    currentUrl: page.url(),
+    currentTitle: cleanText(await page.title().catch(() => "")),
+    markerTexts: authState.markerTexts || [],
+    sidebarModules: authState.sidebarModules || [],
+    errorTexts,
+    bodyPreview,
+  };
+}
+
 export async function ensureAuthenticatedSession(page, authConfig, options = {}) {
   const missing = validateAuthConfig(authConfig);
   if (missing.length) {
@@ -310,20 +363,22 @@ export async function ensureAuthenticatedSession(page, authConfig, options = {})
   await submitLogin(page, authConfig);
 
   if (authConfig.postLoginUrl) {
-    await page.waitForURL(new RegExp(authConfig.postLoginUrl.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), {
+    await page.waitForURL(new RegExp(escapeRegExp(authConfig.postLoginUrl)), {
       timeout: 15000,
     }).catch(() => {});
   }
 
   await page.waitForLoadState("domcontentloaded").catch(() => {});
   await page.waitForLoadState("networkidle").catch(() => {});
+  await page.waitForTimeout(3000).catch(() => {});
 
   const validated = await captureAuthenticatedUiState(page, authConfig);
   if (!validated.authenticated || (await pageLooksLikeLogin(page, authConfig))) {
-    throw new AuthenticationError("Login did not reach the authenticated application shell.", {
-      currentUrl: page.url(),
-      markers: validated.markerTexts,
-    });
+    const diagnostics = await collectFailureDiagnostics(page, authConfig);
+    throw new AuthenticationError(
+      `Login did not reach the authenticated application shell. URL=${diagnostics.currentUrl || "unknown"} TITLE=${diagnostics.currentTitle || "unknown"} ERRORS=${(diagnostics.errorTexts || []).join(" | ") || "none"} MARKERS=${(diagnostics.markerTexts || []).join(" | ") || "none"}`,
+      diagnostics
+    );
   }
 
   return {
