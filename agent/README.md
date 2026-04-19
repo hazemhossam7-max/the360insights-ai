@@ -20,7 +20,7 @@ npm start
 - `AZDO_PROJECT` - for example `the360insights-ai`
 - `AZDO_PAT` - a token with permission to read work items
 - `OPENAI_API_KEY` - preferred for AI-based test generation and website automation
-- `OPENAI_MODEL` - optional, defaults to `gpt-4o-mini`
+- `OPENAI_MODEL` - optional, defaults to `gpt-4o`
 - `OPENAI_BASE_URL` - optional, defaults to `https://api.openai.com`
 - `GEMINI_API_KEY` - still supported if you want to keep using Gemini
 - `GEMINI_MODEL` - optional, defaults to `gemini-2.5-flash`

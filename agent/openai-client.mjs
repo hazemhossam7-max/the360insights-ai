@@ -36,6 +36,19 @@ function describeError(error) {
   return String(error?.cause?.message || error?.message || error || "Unknown error").trim();
 }
 
+function buildRepairPrompt(prompt, requestedCount, issue) {
+  return [
+    prompt,
+    "",
+    "Previous response could not be accepted.",
+    `Issue: ${issue}.`,
+    `Return exactly ${requestedCount} test cases.`,
+    "Return only valid JSON that strictly matches the schema.",
+    "Do not wrap the JSON in markdown fences.",
+    "Do not include commentary before or after the JSON object.",
+  ].join("\n");
+}
+
 function extractOutputText(response) {
   if (typeof response?.output_text === "string" && response.output_text.trim()) {
     return response.output_text;
@@ -103,7 +116,7 @@ function buildSchema(targetCaseCount = 1) {
 
 export function createOpenAIClient(config) {
   const apiKey = String(config.apiKey || "").trim();
-  const model = String(config.model || "gpt-4o-mini").trim();
+  const model = String(config.model || "gpt-4o").trim();
   const baseUrl = normalizeBaseUrl(config.baseUrl);
   const requestTimeoutMs = parsePositiveInteger(
     config.requestTimeoutMs || process.env.OPENAI_REQUEST_TIMEOUT_MS,
@@ -168,26 +181,32 @@ export function createOpenAIClient(config) {
       1600,
       Number(request?.maxOutputTokens || 0) || (requestedCount > 8 ? requestedCount * 320 : 1600)
     );
-    const requestBody = {
-      model,
-      input: prompt,
-      temperature: 0.2,
-      max_output_tokens: maxOutputTokens,
-      text: {
-        format: {
-          type: "json_schema",
-          name: "qa_test_cases",
-          strict: true,
-          schema: buildSchema(requestedCount),
-        },
-      },
-    };
 
     let response = null;
     let payload = {};
     let lastError = null;
+    let repairReason = "";
 
     for (let attempt = 1; attempt <= maxRetries; attempt += 1) {
+      response = null;
+      payload = {};
+      const attemptPrompt = repairReason
+        ? buildRepairPrompt(prompt, requestedCount, repairReason)
+        : prompt;
+      const requestBody = {
+        model,
+        input: attemptPrompt,
+        temperature: 0.2,
+        max_output_tokens: maxOutputTokens,
+        text: {
+          format: {
+            type: "json_schema",
+            name: "qa_test_cases",
+            strict: true,
+            schema: buildSchema(requestedCount),
+          },
+        },
+      };
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(new Error(`Timed out after ${requestTimeoutMs}ms`)), requestTimeoutMs);
 
@@ -216,7 +235,6 @@ export function createOpenAIClient(config) {
         }
 
         lastError = null;
-        break;
       } catch (error) {
         clearTimeout(timeoutId);
         const message = describeError(error);
@@ -231,39 +249,56 @@ export function createOpenAIClient(config) {
         }
         throw new Error(`OpenAI transport error: ${message}`);
       }
+
+      const text = extractOutputText(payload);
+      if (!text) {
+        if (attempt < maxRetries) {
+          repairReason = "The previous response had no text output";
+          await sleep(Math.min(8000, attempt * 1500));
+          continue;
+        }
+        throw new Error("OpenAI returned no text output.");
+      }
+
+      let parsed;
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        if (attempt < maxRetries) {
+          repairReason = "The previous response was not valid JSON";
+          await sleep(Math.min(8000, attempt * 1500));
+          continue;
+        }
+        throw new Error("OpenAI returned invalid JSON output.");
+      }
+
+      const parsedCases = Array.isArray(parsed.testCases) ? parsed.testCases : [];
+      if (parsedCases.length !== requestedCount) {
+        if (attempt < maxRetries) {
+          repairReason = `The previous response returned ${parsedCases.length} test cases instead of ${requestedCount}`;
+          await sleep(Math.min(8000, attempt * 1500));
+          continue;
+        }
+        throw new Error(
+          `OpenAI returned ${parsedCases.length} test cases, but ${requestedCount} were required for this batch.`
+        );
+      }
+
+      return {
+        model,
+        storyTitle: String(parsed.storyTitle || "").trim(),
+        summary: String(parsed.summary || "").trim(),
+        testCases: parsedCases,
+        maxOutputTokens,
+        raw: parsed,
+      };
     }
 
     if (lastError) {
       throw lastError;
     }
 
-    const text = extractOutputText(payload);
-    if (!text) {
-      throw new Error("OpenAI returned no text output.");
-    }
-
-    let parsed;
-    try {
-      parsed = JSON.parse(text);
-    } catch {
-      throw new Error("OpenAI returned invalid JSON output.");
-    }
-
-    const parsedCases = Array.isArray(parsed.testCases) ? parsed.testCases : [];
-    if (parsedCases.length !== requestedCount) {
-      throw new Error(
-        `OpenAI returned ${parsedCases.length} test cases, but ${requestedCount} were required for this batch.`
-      );
-    }
-
-    return {
-      model,
-      storyTitle: String(parsed.storyTitle || "").trim(),
-      summary: String(parsed.summary || "").trim(),
-      testCases: parsedCases,
-      maxOutputTokens,
-      raw: parsed,
-    };
+    throw new Error("OpenAI request failed without a usable response.");
   }
 
   return {

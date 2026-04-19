@@ -159,7 +159,7 @@ async function generateWithModel(content, options, kind, fallbackFactory) {
           })
         : createOpenAIClient({
             apiKey: options.apiKey || process.env.OPENAI_API_KEY,
-            model: options.model || process.env.OPENAI_MODEL || "gpt-4o-mini",
+            model: options.model || process.env.OPENAI_MODEL || "gpt-4o",
             baseUrl: options.baseUrl || process.env.OPENAI_BASE_URL,
             targetCaseCount,
           });
@@ -346,7 +346,7 @@ async function generateWebsiteCasesWithOpenAI(websiteBrief, options = {}) {
   );
   const client = createOpenAIClient({
     apiKey: options.apiKey || process.env.OPENAI_API_KEY,
-    model: options.model || process.env.OPENAI_MODEL || "gpt-4o-mini",
+    model: options.model || process.env.OPENAI_MODEL || "gpt-4o",
     baseUrl: options.baseUrl || process.env.OPENAI_BASE_URL,
     targetCaseCount: 12,
   });

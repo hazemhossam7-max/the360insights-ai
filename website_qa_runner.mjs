@@ -1302,7 +1302,7 @@ async function generateWebsiteDrafts(websiteBrief, options) {
   const sharedOptions = {
     provider: options.provider || "openai",
     apiKey: options.openAiApiKey,
-    model: options.openAiModel || "gpt-4o-mini",
+    model: options.openAiModel || "gpt-4o",
     baseUrl: options.openAiBaseUrl || "",
     geminiApiKey: options.geminiApiKey || "",
     geminiModel: options.geminiModel || "",

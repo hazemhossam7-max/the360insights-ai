@@ -316,7 +316,7 @@ async function processWebhook(payload, workItemId, client, config) {
   const aiModel =
     aiProvider === "Gemini"
       ? config.geminiModel || "gemini-2.5-flash"
-      : config.openAiModel || "gpt-4o-mini";
+      : config.openAiModel || "gpt-4o";
   console.log(`[webhook] generating test cases with ${aiProvider} model ${aiModel}`);
 
   const testCaseDrafts = await generateTestCasesForStory(workItem, {
