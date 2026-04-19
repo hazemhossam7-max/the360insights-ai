@@ -367,7 +367,7 @@ function buildSharedBatches(websiteBrief, targetCount, batchSize) {
 export function buildWebsiteOpenAIBatches(websiteBrief, targetCaseCount = 1000, options = {}) {
   const modules = buildModuleCatalog(websiteBrief);
   const safeTarget = Math.max(1, Number(targetCaseCount) || 1);
-  const batchSize = Math.max(8, Math.min(24, Number(options.batchSize || 16) || 16));
+  const batchSize = Math.max(8, Math.min(24, Number(options.batchSize || 12) || 12));
   const minimumPerModule = modules.length
     ? Math.min(batchSize, Math.max(6, Math.floor(safeTarget / Math.max(1, modules.length * 2))))
     : 0;

@@ -151,7 +151,7 @@ const cases = [
             websiteTargetCaseCount: 20,
             allowHeuristicFallback: "false",
           }),
-          /OpenAI website generation failed: OpenAI request failed \(401\): invalid api key/
+          /OpenAI website generation failed: OpenAI batch 1\/4 \(module Directory\) failed: OpenAI transport error: OpenAI request failed \(401\): invalid api key/
         );
       } finally {
         global.fetch = originalFetch;

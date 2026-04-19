@@ -53,6 +53,65 @@ const cases = [
       }
     },
   },
+  {
+    name: "createOpenAIClient retries transient fetch failures before succeeding",
+    async run() {
+      const originalFetch = global.fetch;
+      const requests = [];
+      let attempts = 0;
+      global.fetch = async (url) => {
+        attempts += 1;
+        requests.push(String(url));
+        if (attempts < 3) {
+          throw new TypeError("fetch failed");
+        }
+
+        return {
+          ok: true,
+          status: 200,
+          statusText: "OK",
+          async json() {
+            return {
+              output_text: JSON.stringify({
+                storyTitle: "Batch",
+                summary: "Summary",
+                testCases: [
+                  {
+                    title: "Case 1",
+                    preconditions: ["Logged in"],
+                    steps: ["Open dashboard"],
+                    expectedResult: "Dashboard loads",
+                    priority: "High",
+                    automationCandidate: true,
+                  },
+                ],
+              }),
+            };
+          },
+        };
+      };
+
+      try {
+        const client = createOpenAIClient({
+          apiKey: "test-key",
+          maxRetries: 3,
+          requestTimeoutMs: 5000,
+        });
+
+        const result = await client.createResponse({
+          kind: "website",
+          content: { module: "Dashboard" },
+          targetCaseCount: 1,
+        });
+
+        assert.equal(attempts, 3);
+        assert.equal(requests.length, 3);
+        assert.equal(result.testCases.length, 1);
+      } finally {
+        global.fetch = originalFetch;
+      }
+    },
+  },
 ];
 
 let failures = 0;

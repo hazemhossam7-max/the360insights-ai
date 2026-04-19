@@ -255,7 +255,7 @@ function dedupeNormalizedCases(testCases) {
 function buildSupplementalWebsiteBatches(plan, shortfall, existingCases, options = {}) {
   const batchSize = Math.max(
     8,
-    Math.min(20, Number(options.openAiBatchSize || process.env.OPENAI_BATCH_CASE_COUNT || plan.batchSize || 16) || 16)
+    Math.min(20, Number(options.openAiBatchSize || process.env.OPENAI_BATCH_CASE_COUNT || plan.batchSize || 12) || 12)
   );
   const existingTitles = uniqueCompact((existingCases || []).map((item) => item?.title)).slice(-24);
   const prioritizedTemplates = [
@@ -302,14 +302,27 @@ async function collectWebsiteBatchCases(client, batches) {
   const rawCases = [];
   const batchNotes = [];
 
-  for (const batch of batches || []) {
-    const result = await client.createResponse({
-      kind: "website",
-      content: batch.content,
-      targetCaseCount: batch.targetCaseCount,
-      maxOutputTokens: batch.maxOutputTokens,
-      instructions: batch.instructions,
-    });
+  for (let index = 0; index < (batches || []).length; index += 1) {
+    const batch = batches[index];
+    let result;
+    try {
+      result = await client.createResponse({
+        kind: "website",
+        content: batch.content,
+        targetCaseCount: batch.targetCaseCount,
+        maxOutputTokens: batch.maxOutputTokens,
+        instructions: batch.instructions,
+      });
+    } catch (error) {
+      const batchLabel = cleanText(
+        batch.batchType === "module"
+          ? `module ${batch.module || "unknown"}`
+          : batch.batchLabel || `shared batch ${index + 1}`
+      );
+      throw new Error(
+        `OpenAI batch ${index + 1}/${(batches || []).length} (${batchLabel}) failed: ${error.message}`
+      );
+    }
 
     const normalizedBatchCases = (result?.testCases || []).map(normalizeCase);
     rawCases.push(...normalizedBatchCases);
@@ -335,10 +348,10 @@ async function generateWebsiteCasesWithOpenAI(websiteBrief, options = {}) {
     apiKey: options.apiKey || process.env.OPENAI_API_KEY,
     model: options.model || process.env.OPENAI_MODEL || "gpt-4o-mini",
     baseUrl: options.baseUrl || process.env.OPENAI_BASE_URL,
-    targetCaseCount: 16,
+    targetCaseCount: 12,
   });
   const plan = buildWebsiteOpenAIBatches(websiteBrief, targetCaseCount, {
-    batchSize: Math.max(10, Math.min(20, Number(options.openAiBatchSize || process.env.OPENAI_BATCH_CASE_COUNT || 16) || 16)),
+    batchSize: Math.max(10, Math.min(20, Number(options.openAiBatchSize || process.env.OPENAI_BATCH_CASE_COUNT || 12) || 12)),
   });
 
   const initial = await collectWebsiteBatchCases(client, plan.batches);

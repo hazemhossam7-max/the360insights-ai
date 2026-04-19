@@ -16,6 +16,26 @@ function normalizeBaseUrl(value) {
   return trimTrailingSlash(raw);
 }
 
+function parsePositiveInteger(value, fallback) {
+  const parsed = Number(value);
+  if (Number.isFinite(parsed) && parsed > 0) {
+    return Math.round(parsed);
+  }
+  return fallback;
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function shouldRetryStatus(status) {
+  return [408, 409, 429, 500, 502, 503, 504].includes(Number(status));
+}
+
+function describeError(error) {
+  return String(error?.cause?.message || error?.message || error || "Unknown error").trim();
+}
+
 function extractOutputText(response) {
   if (typeof response?.output_text === "string" && response.output_text.trim()) {
     return response.output_text;
@@ -85,6 +105,14 @@ export function createOpenAIClient(config) {
   const apiKey = String(config.apiKey || "").trim();
   const model = String(config.model || "gpt-4o-mini").trim();
   const baseUrl = normalizeBaseUrl(config.baseUrl);
+  const requestTimeoutMs = parsePositiveInteger(
+    config.requestTimeoutMs || process.env.OPENAI_REQUEST_TIMEOUT_MS,
+    180000
+  );
+  const maxRetries = parsePositiveInteger(
+    config.maxRetries || process.env.OPENAI_MAX_RETRIES,
+    3
+  );
 
   if (!apiKey) {
     throw new Error("OPENAI_API_KEY is required for AI generation.");
@@ -140,33 +168,73 @@ export function createOpenAIClient(config) {
       1600,
       Number(request?.maxOutputTokens || 0) || (requestedCount > 8 ? requestedCount * 320 : 1600)
     );
-
-    const response = await fetch(`${baseUrl}/v1/responses`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model,
-        input: prompt,
-        temperature: 0.2,
-        max_output_tokens: maxOutputTokens,
-        text: {
-          format: {
-            type: "json_schema",
-            name: "qa_test_cases",
-            strict: true,
-            schema: buildSchema(requestedCount),
-          },
+    const requestBody = {
+      model,
+      input: prompt,
+      temperature: 0.2,
+      max_output_tokens: maxOutputTokens,
+      text: {
+        format: {
+          type: "json_schema",
+          name: "qa_test_cases",
+          strict: true,
+          schema: buildSchema(requestedCount),
         },
-      }),
-    });
+      },
+    };
 
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      const message = payload?.error?.message || payload?.message || response.statusText || "Request failed";
-      throw new Error(`OpenAI request failed (${response.status}): ${message}`);
+    let response = null;
+    let payload = {};
+    let lastError = null;
+
+    for (let attempt = 1; attempt <= maxRetries; attempt += 1) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(new Error(`Timed out after ${requestTimeoutMs}ms`)), requestTimeoutMs);
+
+      try {
+        response = await fetch(`${baseUrl}/v1/responses`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(requestBody),
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+        payload = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+          const message = payload?.error?.message || payload?.message || response.statusText || "Request failed";
+          const httpError = new Error(`OpenAI request failed (${response.status}): ${message}`);
+          if (shouldRetryStatus(response.status) && attempt < maxRetries) {
+            lastError = httpError;
+            await sleep(Math.min(8000, attempt * 1500));
+            continue;
+          }
+          throw httpError;
+        }
+
+        lastError = null;
+        break;
+      } catch (error) {
+        clearTimeout(timeoutId);
+        const message = describeError(error);
+        const isAbort = error?.name === "AbortError" || /timed out/i.test(message);
+        const networkError = !response || /fetch failed/i.test(message) || /network/i.test(message) || isAbort;
+        if (attempt < maxRetries && networkError) {
+          lastError = new Error(`OpenAI transport error on attempt ${attempt}/${maxRetries}: ${message}`);
+          response = null;
+          payload = {};
+          await sleep(Math.min(8000, attempt * 1500));
+          continue;
+        }
+        throw new Error(`OpenAI transport error: ${message}`);
+      }
+    }
+
+    if (lastError) {
+      throw lastError;
     }
 
     const text = extractOutputText(payload);
