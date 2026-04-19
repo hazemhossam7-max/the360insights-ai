@@ -303,6 +303,7 @@ const cases = [
             url: "https://example.com/login",
             title: "Sign in",
             afterSubmit: "authenticated",
+            onLandingGoto: "login",
             elements: {
               'input[type="email"]': { visible: true },
               'input[type="password"]': { visible: true },
@@ -332,6 +333,46 @@ const cases = [
           return true;
         }
       );
+    },
+  },
+  {
+    name: "ensureAuthenticatedSession reuse-only mode can recover by navigating back into the authenticated shell",
+    async run() {
+      const authConfig = createAuthConfig();
+      const page = new FakePage({
+        loginUrl: authConfig.loginUrl,
+        websiteUrl: authConfig.websiteUrl,
+        postLoginUrl: authConfig.postLoginUrl,
+        initialScene: "not-found",
+        scenes: {
+          "not-found": {
+            url: "https://example.com/__codex_invalid_123",
+            title: "Page Not Found",
+            onLandingGoto: "authenticated",
+            bodyText: "404 Page Not Found",
+            elements: {},
+          },
+          authenticated: {
+            url: "https://example.com/app",
+            title: "Dashboard",
+            sidebarModules: ["Dashboard", "Reports"],
+            elements: {
+              nav: { visible: true, text: "Dashboard Reports" },
+            },
+          },
+        },
+      });
+
+      const session = await ensureAuthenticatedSession(page, authConfig, {
+        skipNavigation: true,
+        allowFreshLogin: false,
+      });
+
+      assert.equal(session.authenticated, true);
+      assert.equal(session.loginAttempted, false);
+      assert.equal(session.recoveredByNavigation, true);
+      assert.equal(page.submitCount, 0);
+      assert.equal(page.gotoHistory.at(-1), "https://example.com/app");
     },
   },
   {

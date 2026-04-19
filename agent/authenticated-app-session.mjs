@@ -467,6 +467,23 @@ export async function ensureAuthenticatedSession(page, authConfig, options = {})
   }
 
   if (options.allowFreshLogin === false) {
+    const reuseTarget = cleanText(authConfig.postLoginUrl || authConfig.websiteUrl || "");
+    if (reuseTarget && cleanText(page.url()) !== reuseTarget) {
+      await page.goto(reuseTarget, { waitUntil: "domcontentloaded" });
+      await page.waitForLoadState("networkidle").catch(() => {});
+
+      const recoveredSession = await captureAuthenticatedUiState(page, authConfig);
+      if (recoveredSession.authenticated && !(await pageLooksLikeLogin(page, authConfig))) {
+        return {
+          ...recoveredSession,
+          loginAttempted: false,
+          loginUrl: authConfig.loginUrl,
+          postLoginUrl: authConfig.postLoginUrl,
+          recoveredByNavigation: true,
+        };
+      }
+    }
+
     throw new AuthenticationError("The authenticated session is not available for reuse on the current page.", {
       currentUrl: page.url(),
       currentTitle: cleanText(await page.title().catch(() => "")),
