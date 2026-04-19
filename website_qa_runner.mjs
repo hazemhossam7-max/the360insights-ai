@@ -633,15 +633,14 @@ async function assert(condition, message) {
 
 async function goHome(page, websiteBrief) {
   const authConfig = websiteBrief?.authConfig;
-  if (authConfig?.requireAuth) {
-    await ensureAuthenticatedSession(page, authConfig);
-  }
-
   const targetUrl = websiteBrief?.entryUrl || websiteBrief?.url;
   const response = await page.goto(targetUrl, { waitUntil: "domcontentloaded" });
   await page.waitForLoadState("networkidle").catch(() => {});
   if (authConfig?.requireAuth) {
-    const authState = await captureAuthenticatedUiState(page, authConfig);
+    const authState = await ensureAuthenticatedSession(page, authConfig, {
+      skipNavigation: true,
+      allowFreshLogin: false,
+    });
     await assert(authState.authenticated, "The protected application shell was not visible after navigation.");
   }
   await assert(!response || response.status() < 500, `Home page returned HTTP ${response?.status() || "unknown"}.`);
@@ -911,7 +910,10 @@ function buildBlockedResult(testCase, classification, error) {
 async function verifyAuthenticatedEntry(page, websiteBrief) {
   const authConfig = websiteBrief?.authConfig;
   await assert(Boolean(authConfig?.requireAuth), "Authentication smoke checks require APP_REQUIRE_AUTH=true.");
-  const authState = await ensureAuthenticatedSession(page, authConfig);
+  const authState = await ensureAuthenticatedSession(page, authConfig, {
+    skipNavigation: true,
+    allowFreshLogin: false,
+  });
   await assert(authState.authenticated, "The protected application shell was not reached after login.");
   await assert(
     (authState.sidebarModules || []).length > 0 || (authState.markerTexts || []).length > 0,
@@ -1371,7 +1373,10 @@ async function main() {
       const testCase = testCaseDrafts.testCases[index];
       try {
         if (authConfig.requireAuth) {
-          await ensureAuthenticatedSession(page, authConfig, { skipNavigation: true });
+          await ensureAuthenticatedSession(page, authConfig, {
+            skipNavigation: true,
+            allowFreshLogin: false,
+          });
         }
 
         await runGeneratedCase(page, websiteBrief, testCase, index);

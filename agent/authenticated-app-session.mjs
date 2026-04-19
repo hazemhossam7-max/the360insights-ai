@@ -466,6 +466,14 @@ export async function ensureAuthenticatedSession(page, authConfig, options = {})
     };
   }
 
+  if (options.allowFreshLogin === false) {
+    throw new AuthenticationError("The authenticated session is not available for reuse on the current page.", {
+      currentUrl: page.url(),
+      currentTitle: cleanText(await page.title().catch(() => "")),
+      transitionState: "authenticated_session_missing",
+    });
+  }
+
   const usernameField = await firstVisibleLocator(page, authConfig.usernameSelectors);
   const passwordField = await firstVisibleLocator(page, authConfig.passwordSelectors);
 
@@ -658,7 +666,10 @@ export async function discoverAuthenticatedApp(page, authConfig) {
 
     await page.goto(next.url, { waitUntil: "domcontentloaded" });
     await page.waitForLoadState("networkidle").catch(() => {});
-    const refreshedSession = await ensureAuthenticatedSession(page, authConfig, { skipNavigation: true });
+    const refreshedSession = await ensureAuthenticatedSession(page, authConfig, {
+      skipNavigation: true,
+      allowFreshLogin: false,
+    });
     if (!refreshedSession.authenticated) {
       throw new AuthenticationError("Authenticated discovery lost the protected session while crawling internal pages.", {
         currentUrl: page.url(),

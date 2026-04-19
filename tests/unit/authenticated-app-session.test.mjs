@@ -64,6 +64,7 @@ class FakePage {
     this.sceneName = initialScene;
     this.fills = new Map();
     this.gotoHistory = [];
+    this.submitCount = 0;
   }
 
   get scene() {
@@ -139,6 +140,7 @@ class FakePage {
   }
 
   async submit() {
+    this.submitCount += 1;
     this.sceneName = this.scene?.afterSubmit || this.sceneName;
   }
 }
@@ -285,6 +287,51 @@ const cases = [
       assert.equal(session.authenticated, true);
       assert.equal(session.loginAttempted, false);
       assert.deepEqual(session.sidebarModules, ["Dashboard", "Reports"]);
+    },
+  },
+  {
+    name: "ensureAuthenticatedSession reuse-only mode does not submit the login form again",
+    async run() {
+      const authConfig = createAuthConfig();
+      const page = new FakePage({
+        loginUrl: authConfig.loginUrl,
+        websiteUrl: authConfig.websiteUrl,
+        postLoginUrl: authConfig.postLoginUrl,
+        initialScene: "login",
+        scenes: {
+          login: {
+            url: "https://example.com/login",
+            title: "Sign in",
+            afterSubmit: "authenticated",
+            elements: {
+              'input[type="email"]': { visible: true },
+              'input[type="password"]': { visible: true },
+              'button[type="submit"]': { visible: true, action: "submit" },
+            },
+          },
+          authenticated: {
+            url: "https://example.com/app",
+            title: "Dashboard",
+            sidebarModules: ["Dashboard", "Reports"],
+            elements: {
+              nav: { visible: true, text: "Dashboard Reports" },
+            },
+          },
+        },
+      });
+
+      await assert.rejects(
+        ensureAuthenticatedSession(page, authConfig, {
+          skipNavigation: true,
+          allowFreshLogin: false,
+        }),
+        (error) => {
+          assert.ok(error instanceof AuthenticationError);
+          assert.equal(error.details.transitionState, "authenticated_session_missing");
+          assert.equal(page.submitCount, 0);
+          return true;
+        }
+      );
     },
   },
   {
