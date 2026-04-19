@@ -111,6 +111,18 @@ function buildAzureDevOpsConfig() {
   };
 }
 
+function buildGeneratedPlanName(websiteBrief) {
+  const siteLabel = cleanText(websiteBrief?.title || websiteBrief?.host || websiteBrief?.url || "Website");
+  return `${siteLabel} Generated Coverage ${new Date().toISOString().slice(0, 16).replace("T", " ")}`;
+}
+
+function buildGeneratedSuiteName(websiteBrief, testCaseDrafts) {
+  const source = cleanText(testCaseDrafts?.generationSource || "generated");
+  const count = Array.isArray(testCaseDrafts?.testCases) ? testCaseDrafts.testCases.length : 0;
+  const siteLabel = cleanText(websiteBrief?.title || websiteBrief?.host || "Website");
+  return `${siteLabel} ${source} suite (${count} cases)`;
+}
+
 function isTruthyEnv(value) {
   return /^(1|true|yes|on)$/i.test(String(value || "").trim());
 }
@@ -755,28 +767,33 @@ ${testCaseXml}
 
 async function uploadGeneratedCases(websiteBrief, testCaseDrafts) {
   const config = buildAzureDevOpsConfig();
-  const planId = parsePositiveInteger(readEnv("AZDO_TEST_PLAN_ID"));
-  if (!config.orgUrl || !config.project || !planId) {
+  if (!config.orgUrl || !config.project) {
     return null;
   }
 
   const client = createTestPlansClient(config);
-  const plan = await client.getTestPlan(planId);
-  const rootSuiteId = parsePositiveInteger(plan?.rootSuite?.id);
+  const planName = readEnv("AZDO_GENERATED_PLAN_NAME") || buildGeneratedPlanName(websiteBrief);
+  const suiteName = readEnv("AZDO_GENERATED_SUITE_NAME") || buildGeneratedSuiteName(websiteBrief, testCaseDrafts);
+  const areaPath = readEnv("AZDO_GENERATED_PLAN_AREA_PATH", "AZDO_AREA_PATH", config.project);
+  const iterationPath = readEnv("AZDO_GENERATED_PLAN_ITERATION", "AZDO_ITERATION_PATH", config.project);
+
+  const createdPlan = await client.createTestPlan({
+    name: planName,
+    areaPath,
+    iteration: iterationPath,
+  });
+  const planId = parsePositiveInteger(createdPlan?.id);
+  const rootSuiteId = parsePositiveInteger(createdPlan?.rootSuiteId);
   if (!rootSuiteId) {
     throw new Error(`Azure DevOps plan ${planId} does not expose a valid root suite.`);
   }
 
-  let suiteId = parsePositiveInteger(readEnv("AZDO_TEST_SUITE_ID"));
-  if (!suiteId) {
-    const suiteName = `${cleanText(websiteBrief?.title || websiteBrief?.host || "Website")} (${new Date().toISOString().slice(0, 10)})`;
-    const suite = await client.createTestSuite({
-      planId,
-      parentSuiteId: rootSuiteId,
-      name: suiteName,
-    });
-    suiteId = parsePositiveInteger(suite?.id);
-  }
+  const suite = await client.createTestSuite({
+    planId,
+    parentSuiteId: rootSuiteId,
+    name: suiteName,
+  });
+  const suiteId = parsePositiveInteger(suite?.id);
 
   if (!suiteId) {
     throw new Error("A valid Azure DevOps suite id could not be resolved.");
@@ -813,6 +830,8 @@ async function uploadGeneratedCases(websiteBrief, testCaseDrafts) {
   return {
     planId,
     suiteId,
+    planName: createdPlan?.name || planName,
+    suiteName: suite?.name || suiteName,
     createdIds,
     failedCases,
   };

@@ -141,6 +141,49 @@ export function createTestPlansClient(config) {
   }
 
   return {
+    async createTestPlan({ name, areaPath = "", iteration = "" }) {
+      const planName = String(name || "").trim();
+      if (!planName) {
+        throw new Error("A test plan name is required.");
+      }
+
+      const url = new URL(`${orgUrl}/${encodeURIComponent(project)}/_apis/testplan/plans`);
+      url.searchParams.set("api-version", "7.1");
+
+      const payload = {
+        name: planName,
+      };
+
+      if (String(areaPath || "").trim()) {
+        payload.area = {
+          name: String(areaPath).trim(),
+        };
+      }
+
+      if (String(iteration || "").trim()) {
+        payload.iteration = String(iteration).trim();
+      }
+
+      const created = await requestJson(url.toString(), {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+
+      return {
+        id: Number(created.id),
+        name: created.name || planName,
+        areaPath:
+          created.areaPath ||
+          created.area?.name ||
+          String(areaPath || "").trim(),
+        iteration:
+          created.iteration ||
+          created.iterationPath ||
+          String(iteration || "").trim(),
+        rootSuiteId: Number(created.rootSuite?.id || 0) || null,
+      };
+    },
+
     async getTestPlan(planId) {
       const url = new URL(
         `${orgUrl}/${encodeURIComponent(project)}/_apis/testplan/plans/${encodeURIComponent(planId)}`
