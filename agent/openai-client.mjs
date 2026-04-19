@@ -37,7 +37,7 @@ function buildSchema(targetCaseCount = 1) {
       testCases: {
         type: "array",
         minItems: requestedCount,
-        maxItems: Math.max(8, Math.min(16, requestedCount)),
+        maxItems: requestedCount,
         items: {
           type: "object",
           additionalProperties: false,
@@ -71,7 +71,6 @@ export function createOpenAIClient(config) {
   const apiKey = String(config.apiKey || "").trim();
   const model = String(config.model || "gpt-4o-mini").trim();
   const baseUrl = trimTrailingSlash(config.baseUrl || "https://api.openai.com");
-  const targetCaseCount = Math.max(1, Number(config.targetCaseCount || 1));
 
   if (!apiKey) {
     throw new Error("OPENAI_API_KEY is required for AI generation.");
@@ -122,6 +121,11 @@ export function createOpenAIClient(config) {
 
   async function createResponse(request = {}) {
     const prompt = buildPrompt(request);
+    const requestedCount = Math.max(1, Number(request?.targetCaseCount || config.targetCaseCount || 1));
+    const maxOutputTokens = Math.max(
+      1600,
+      Number(request?.maxOutputTokens || 0) || (requestedCount > 8 ? requestedCount * 320 : 1600)
+    );
 
     const response = await fetch(`${baseUrl}/v1/responses`, {
       method: "POST",
@@ -133,13 +137,13 @@ export function createOpenAIClient(config) {
         model,
         input: prompt,
         temperature: 0.2,
-        max_output_tokens: targetCaseCount > 8 ? 3000 : 1600,
+        max_output_tokens: maxOutputTokens,
         text: {
           format: {
             type: "json_schema",
-            name: "trip_budget_test_cases",
+            name: "qa_test_cases",
             strict: true,
-            schema: buildSchema(request?.targetCaseCount),
+            schema: buildSchema(requestedCount),
           },
         },
       }),
@@ -163,11 +167,19 @@ export function createOpenAIClient(config) {
       throw new Error("OpenAI returned invalid JSON output.");
     }
 
+    const parsedCases = Array.isArray(parsed.testCases) ? parsed.testCases : [];
+    if (parsedCases.length !== requestedCount) {
+      throw new Error(
+        `OpenAI returned ${parsedCases.length} test cases, but ${requestedCount} were required for this batch.`
+      );
+    }
+
     return {
       model,
       storyTitle: String(parsed.storyTitle || "").trim(),
       summary: String(parsed.summary || "").trim(),
-      testCases: Array.isArray(parsed.testCases) ? parsed.testCases : [],
+      testCases: parsedCases,
+      maxOutputTokens,
       raw: parsed,
     };
   }

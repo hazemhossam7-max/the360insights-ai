@@ -1312,7 +1312,10 @@ async function generateWebsiteDrafts(websiteBrief, options) {
   return generateTestCasesForWebsite(websiteBrief, {
     ...sharedOptions,
     websiteTargetCaseCount: options.websiteTargetCaseCount,
-    allowHeuristicFallback: "true",
+    allowHeuristicFallback:
+      options.websiteGenerationMode === "openai"
+        ? "false"
+        : "true",
   });
 }
 

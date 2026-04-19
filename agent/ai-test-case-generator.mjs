@@ -2,6 +2,21 @@ import { createOpenAIClient } from "./openai-client.mjs";
 import { createGeminiClient } from "./gemini-client.mjs";
 import { generateTestCaseDrafts as generateHeuristicTestCaseDrafts } from "./story-to-tests.mjs";
 import { expandWebsiteTestCases } from "./website-case-expander.mjs";
+import { buildWebsiteOpenAIBatches } from "./website-openai-plan.mjs";
+
+function cleanText(value) {
+  return String(value || "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizeKey(value) {
+  return cleanText(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
 
 function normalizeCase(item, index) {
   const title = String(item?.title || "").trim();
@@ -66,6 +81,7 @@ function normalizeWebsiteResult(websiteBrief, result, source) {
     summary,
     generationSource: source,
     model: result?.model || null,
+    generationNotes: result?.generationNotes || "",
     generatedAt: new Date().toISOString(),
     testCases,
   };
@@ -176,11 +192,223 @@ async function generateWithModel(content, options, kind, fallbackFactory) {
   }
 }
 
+function buildWebsiteGenerationSummary(websiteBrief, batches, createdCases) {
+  const moduleNames = uniqueCompact(
+    (batches || [])
+      .map((batch) => batch.module)
+      .filter(Boolean)
+  );
+
+  const focusItems = uniqueCompact(
+    (batches || []).flatMap((batch) => batch.content?.batchFocusItems || [])
+  );
+
+  return cleanText(
+    [
+      `OpenAI generated ${createdCases.length} website test cases across ${moduleNames.length} modules.`,
+      moduleNames.length ? `Modules: ${moduleNames.join(", ")}.` : "",
+      focusItems.length ? `Representative subfeatures: ${focusItems.slice(0, 12).join(", ")}.` : "",
+    ]
+      .filter(Boolean)
+      .join(" ")
+  );
+}
+
+function uniqueCompact(values) {
+  return Array.from(
+    new Set(
+      (values || [])
+        .map((item) => cleanText(item))
+        .filter(Boolean)
+    )
+  );
+}
+
+function dedupeNormalizedCases(testCases) {
+  const seen = new Set();
+  const output = [];
+
+  for (const item of testCases || []) {
+    const normalized = normalizeCase(item, output.length);
+    const key = normalizeKey(
+      [
+        normalized.title,
+        normalized.expectedResult,
+        ...(normalized.steps || []),
+      ].join(" ")
+    );
+
+    if (!key || seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    output.push({
+      ...normalized,
+      id: `TC-${String(output.length + 1).padStart(3, "0")}`,
+    });
+  }
+
+  return output;
+}
+
+function buildSupplementalWebsiteBatches(plan, shortfall, existingCases, options = {}) {
+  const batchSize = Math.max(
+    8,
+    Math.min(20, Number(options.openAiBatchSize || process.env.OPENAI_BATCH_CASE_COUNT || plan.batchSize || 16) || 16)
+  );
+  const existingTitles = uniqueCompact((existingCases || []).map((item) => item?.title)).slice(-24);
+  const prioritizedTemplates = [
+    ...(plan.batches || []).filter((batch) => batch.batchType === "module"),
+    ...(plan.batches || []).filter((batch) => batch.batchType === "shared"),
+  ];
+
+  if (!prioritizedTemplates.length) {
+    return [];
+  }
+
+  const supplements = [];
+  let remaining = shortfall;
+  let cursor = 0;
+
+  while (remaining > 0) {
+    const template = prioritizedTemplates[cursor % prioritizedTemplates.length];
+    const currentTarget = Math.min(batchSize, remaining);
+    remaining -= currentTarget;
+    cursor += 1;
+
+    supplements.push({
+      ...template,
+      targetCaseCount: currentTarget,
+      maxOutputTokens: Math.max(5000, currentTarget * 320),
+      instructions: [
+        ...(template.instructions || []),
+        "Generate additional cases that are materially different from previously generated ones for this same authenticated product area.",
+        existingTitles.length
+          ? `Avoid overlapping with these existing case titles: ${existingTitles.join(" | ")}.`
+          : "",
+      ].filter(Boolean),
+      content: {
+        ...(template.content || {}),
+        existingCaseTitlesToAvoid: existingTitles,
+      },
+    });
+  }
+
+  return supplements;
+}
+
+async function collectWebsiteBatchCases(client, batches) {
+  const rawCases = [];
+  const batchNotes = [];
+
+  for (const batch of batches || []) {
+    const result = await client.createResponse({
+      kind: "website",
+      content: batch.content,
+      targetCaseCount: batch.targetCaseCount,
+      maxOutputTokens: batch.maxOutputTokens,
+      instructions: batch.instructions,
+    });
+
+    const normalizedBatchCases = (result?.testCases || []).map(normalizeCase);
+    rawCases.push(...normalizedBatchCases);
+    batchNotes.push(
+      cleanText(
+        `${batch.batchType === "module" ? `module ${batch.module}` : batch.batchLabel}: ${normalizedBatchCases.length} cases`
+      )
+    );
+  }
+
+  return {
+    rawCases,
+    batchNotes,
+  };
+}
+
+async function generateWebsiteCasesWithOpenAI(websiteBrief, options = {}) {
+  const targetCaseCount = Math.max(
+    1,
+    Number(options.websiteTargetCaseCount || process.env.WEBSITE_TARGET_CASE_COUNT || 1000) || 1000
+  );
+  const client = createOpenAIClient({
+    apiKey: options.apiKey || process.env.OPENAI_API_KEY,
+    model: options.model || process.env.OPENAI_MODEL || "gpt-4o-mini",
+    baseUrl: options.baseUrl || process.env.OPENAI_BASE_URL,
+    targetCaseCount: 16,
+  });
+  const plan = buildWebsiteOpenAIBatches(websiteBrief, targetCaseCount, {
+    batchSize: Math.max(10, Math.min(20, Number(options.openAiBatchSize || process.env.OPENAI_BATCH_CASE_COUNT || 16) || 16)),
+  });
+
+  const initial = await collectWebsiteBatchCases(client, plan.batches);
+  const batchNotes = [...initial.batchNotes];
+  let deduped = dedupeNormalizedCases(initial.rawCases).slice(0, targetCaseCount);
+
+  if (deduped.length < targetCaseCount) {
+    const supplements = buildSupplementalWebsiteBatches(
+      plan,
+      targetCaseCount - deduped.length,
+      deduped,
+      options
+    );
+    if (supplements.length) {
+      const supplemental = await collectWebsiteBatchCases(client, supplements);
+      batchNotes.push(`supplemental_round: ${supplements.length} batches`);
+      batchNotes.push(...supplemental.batchNotes);
+      deduped = dedupeNormalizedCases([...deduped, ...supplemental.rawCases]).slice(0, targetCaseCount);
+    }
+  }
+
+  if (!deduped.length) {
+    throw new Error("OpenAI returned zero website test cases after batched generation.");
+  }
+  if (deduped.length < targetCaseCount) {
+    throw new Error(
+      `OpenAI generated ${deduped.length} unique website test cases, but ${targetCaseCount} were requested.`
+    );
+  }
+
+  return {
+    websiteUrl: String(websiteBrief?.url || "").trim(),
+    websiteTitle: String(websiteBrief?.title || websiteBrief?.host || "").trim(),
+    summary: buildWebsiteGenerationSummary(websiteBrief, plan.batches, deduped),
+    generationSource: "openai-deep-modules",
+    model: client.model,
+    generationNotes: batchNotes.join(" | "),
+    generatedAt: new Date().toISOString(),
+    testCases: deduped,
+  };
+}
+
 export async function generateTestCasesForStory(story, options = {}) {
   return generateWithModel(story, options, "story", () => generateHeuristicTestCaseDrafts(story));
 }
 
 export async function generateTestCasesForWebsite(websiteBrief, options = {}) {
+  const provider = resolveAiProvider(options);
+  const heuristicFallbackEnabled = isTruthyFlag(
+    options.allowHeuristicFallback ?? process.env.ALLOW_HEURISTIC_FALLBACK ?? ""
+  );
+
+  if (provider === "openai") {
+    try {
+      return await generateWebsiteCasesWithOpenAI(websiteBrief, options);
+    } catch (error) {
+      if (heuristicFallbackEnabled) {
+        const heuristic = {
+          ...generateHeuristicTestCaseDrafts(websiteBrief),
+          generationSource: "heuristic",
+          model: null,
+          generationNotes: error.message,
+        };
+        return expandWebsiteResult(websiteBrief, heuristic, "heuristic", options);
+      }
+
+      throw new Error(`OpenAI website generation failed: ${error.message}`);
+    }
+  }
+
   return generateWithModel(
     websiteBrief,
     options,
