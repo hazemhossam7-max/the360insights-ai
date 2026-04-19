@@ -1,0 +1,72 @@
+function cleanText(value) {
+  return String(value || "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function includesAny(text, patterns) {
+  const haystack = cleanText(text).toLowerCase();
+  return patterns.some((pattern) => haystack.includes(pattern));
+}
+
+export function classifyFailure({ error, pageContext, authState, screenshotFingerprintCount = 1 }) {
+  const message = cleanText(error?.message || error || "");
+  const currentUrl = cleanText(pageContext?.url || "").toLowerCase();
+  const currentTitle = cleanText(pageContext?.title || "").toLowerCase();
+  const reachedProtectedPage = Boolean(pageContext?.reachedProtectedPage);
+
+  if (error?.classification === "authentication_access_issue" || !authState?.authenticated) {
+    return "Authentication/access issue";
+  }
+
+  if (
+    includesAny(message, [
+      "missing required authentication configuration",
+      "login form could not be found",
+      "did not reach the authenticated application shell",
+      "authenticated discovery lost",
+      "password field",
+    ]) ||
+    /\/login\b|\bsignin\b|\bauth\b/.test(currentUrl) ||
+    /\blogin\b|\bsign in\b/.test(currentTitle)
+  ) {
+    return "Authentication/access issue";
+  }
+
+  if (
+    includesAny(message, [
+      "timed out",
+      "http 500",
+      "http 502",
+      "http 503",
+      "http 504",
+      "net::",
+      "enotfound",
+      "econnrefused",
+      "empty during the performance check",
+    ])
+  ) {
+    return "Environment/test setup issue";
+  }
+
+  if (
+    includesAny(message, [
+      "could not find a navigation target",
+      "could not validate the",
+      "unsupported",
+      "unconfirmed",
+    ])
+  ) {
+    return "Unsupported/unconfirmed feature assumption";
+  }
+
+  if (!reachedProtectedPage || screenshotFingerprintCount >= 3) {
+    return "Automation issue";
+  }
+
+  return "Product bug";
+}
+
+export function isRealBugClassification(classification) {
+  return cleanText(classification).toLowerCase() === "product bug";
+}

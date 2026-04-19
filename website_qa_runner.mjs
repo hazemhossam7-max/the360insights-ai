@@ -5,6 +5,17 @@ import { analyzeWebsite } from "./agent/website-analyzer.mjs";
 import { generateTestCasesForWebsite } from "./agent/ai-test-case-generator.mjs";
 import { createTestPlansClient } from "./agent/testplans-client.mjs";
 import { createAzureDevOpsClient } from "./agent/azure-devops-client.mjs";
+import {
+  AuthenticationError,
+  buildAuthConfig,
+  buildAuthenticatedWebsiteBrief,
+  captureAuthenticatedUiState,
+  discoverAuthenticatedApp,
+  ensureAuthenticatedSession,
+  validateAuthConfig,
+} from "./agent/authenticated-app-session.mjs";
+import { generateGroundedWebsiteTestCases } from "./agent/grounded-website-testcases.mjs";
+import { classifyFailure, isRealBugClassification } from "./agent/failure-classifier.mjs";
 
 const root = process.cwd();
 const bugDir = path.join(root, "bug_reports");
@@ -97,6 +108,172 @@ function buildAzureDevOpsConfig() {
 
 function isTruthyEnv(value) {
   return /^(1|true|yes|on)$/i.test(String(value || "").trim());
+}
+
+function incrementCounter(map, key) {
+  const normalized = cleanText(key || "unknown");
+  map.set(normalized, (map.get(normalized) || 0) + 1);
+  return map.get(normalized);
+}
+
+function mapToObject(map) {
+  return Object.fromEntries(Array.from(map.entries()));
+}
+
+function mapClassificationToResultStatus(classification) {
+  switch (cleanText(classification).toLowerCase()) {
+    case "product bug":
+      return "failed";
+    case "unsupported/unconfirmed feature assumption":
+      return "notapplicable";
+    case "authentication/access issue":
+    case "automation issue":
+    case "environment/test setup issue":
+      return "blocked";
+    default:
+      return "failed";
+  }
+}
+
+function mapResultStatusToAzureOutcome(status) {
+  switch (cleanText(status).toLowerCase()) {
+    case "passed":
+      return "Passed";
+    case "blocked":
+      return "Blocked";
+    case "notapplicable":
+      return "NotApplicable";
+    default:
+      return "Failed";
+  }
+}
+
+async function buildPageContext(page, authConfig) {
+  const authState = authConfig?.requireAuth
+    ? await captureAuthenticatedUiState(page, authConfig).catch(() => ({ authenticated: false, markerTexts: [], sidebarModules: [] }))
+    : { authenticated: true, markerTexts: [], sidebarModules: [] };
+
+  return {
+    url: page.url(),
+    title: cleanText(await page.title().catch(() => "")),
+    reachedProtectedPage: Boolean(authState.authenticated),
+    authMarkers: authState.markerTexts || [],
+    sidebarModules: authState.sidebarModules || [],
+  };
+}
+
+async function writeSummaryArtifacts(summary) {
+  await writeJunitReport(summary);
+  await fs.writeFile(reportPath, JSON.stringify(summary, null, 2), "utf8");
+}
+
+function buildFailureMarkdown(testCase, failure, pageContext) {
+  const classification = cleanText(failure?.classification || "Automation issue");
+  const heading = isRealBugClassification(classification) ? "Product Bug Report" : "Execution Diagnostic";
+  const pageLabel = cleanText(pageContext?.title || pageContext?.url || "Unavailable");
+
+  return `# ${heading}: ${testCase.id} - ${testCase.title}
+
+## Classification
+${classification}
+
+## Module / Page
+${pageLabel}
+
+## Route
+${cleanText(pageContext?.url || "Unavailable")}
+
+## Steps
+${(testCase.steps || []).map((step, stepIndex) => `${stepIndex + 1}. ${step}`).join("\n")}
+
+## Expected
+${cleanText(testCase.expectedResult || "Expected behavior was not provided.")}
+
+## Actual
+${cleanText(failure?.actual || failure?.error || "Execution failed.")}
+
+## Evidence
+- Reached protected app: ${pageContext?.reachedProtectedPage ? "Yes" : "No"}
+- Auth markers: ${(pageContext?.authMarkers || []).slice(0, 5).join(" | ") || "None"}
+- Sidebar modules: ${(pageContext?.sidebarModules || []).slice(0, 8).join(" | ") || "None"}
+`;
+}
+
+async function writeAuthGateFailureReport(error, websiteUrl, authConfig) {
+  const failure = {
+    id: "AUTH-GATE",
+    title: "Authenticated smoke check failed",
+    actual: cleanText(error?.message || error || "Authenticated smoke check failed."),
+    classification: "Authentication/access issue",
+  };
+
+  const summary = {
+    websiteUrl,
+    aiProvider: "n/a",
+    generationSource: "authentication-gate",
+    gating: {
+      secretValidation: validateAuthConfig(authConfig).length ? "failed" : "passed",
+      loginValidation: "failed",
+      authenticatedSmoke: "failed",
+    },
+    auth: {
+      requireAuth: authConfig.requireAuth,
+      loginUrl: authConfig.loginUrl,
+      postLoginUrl: authConfig.postLoginUrl,
+    },
+    total: 1,
+    passed: 0,
+    failed: 1,
+    failureClassifications: {
+      "Authentication/access issue": 1,
+    },
+    websiteBrief: {
+      url: websiteUrl,
+      title: "Authenticated app entry failed",
+      summary: failure.actual,
+    },
+    testCases: [
+      {
+        id: "AUTH-GATE",
+        title: "Authenticated smoke gate",
+        steps: [
+          "Validate secure auth variables are present.",
+          "Open the login page.",
+          "Submit credentials.",
+          "Verify the protected app shell is visible.",
+        ],
+        expectedResult: "The protected app shell loads successfully.",
+      },
+    ],
+    results: [
+      {
+        id: "AUTH-GATE",
+        title: "Authenticated smoke gate",
+        status: "failed",
+        classification: "Authentication/access issue",
+        error: failure.actual,
+      },
+    ],
+    failures: [failure],
+  };
+
+  const markdown = `# Authentication / Setup Failure
+
+## Classification
+Authentication/access issue
+
+## Login URL
+${cleanText(authConfig.loginUrl || websiteUrl)}
+
+## Actual
+${failure.actual}
+
+## Required Next Step
+Provide valid secure credentials and verify the authenticated shell loads before bulk generation or execution.
+`;
+
+  await fs.writeFile(path.join(bugDir, "auth-gate-failure.md"), markdown, "utf8");
+  await writeSummaryArtifacts(summary);
 }
 
 function decodeXml(value) {
@@ -359,6 +536,26 @@ function textIncludesAny(text, aliases) {
 }
 
 function inferCaseKind(testCase, index) {
+  const category = cleanText(testCase?.category || "").toLowerCase();
+  if (category.includes("auth smoke")) {
+    return "auth";
+  }
+  if (category.includes("navigation")) {
+    return "navigation";
+  }
+  if (category.includes("module availability")) {
+    return "feature";
+  }
+  if (category.includes("core functional")) {
+    return "feature";
+  }
+  if (category.includes("ui validation")) {
+    return "content";
+  }
+  if (category.includes("optional deeper")) {
+    return "flow";
+  }
+
   const text = cleanText(
     [testCase?.title, testCase?.sourceCriterion, ...(testCase?.steps || []), testCase?.expectedResult]
       .filter(Boolean)
@@ -434,9 +631,19 @@ async function assert(condition, message) {
   }
 }
 
-async function goHome(page, websiteUrl) {
-  const response = await page.goto(websiteUrl, { waitUntil: "domcontentloaded" });
+async function goHome(page, websiteBrief) {
+  const authConfig = websiteBrief?.authConfig;
+  if (authConfig?.requireAuth) {
+    await ensureAuthenticatedSession(page, authConfig);
+  }
+
+  const targetUrl = websiteBrief?.entryUrl || websiteBrief?.url;
+  const response = await page.goto(targetUrl, { waitUntil: "domcontentloaded" });
   await page.waitForLoadState("networkidle").catch(() => {});
+  if (authConfig?.requireAuth) {
+    const authState = await captureAuthenticatedUiState(page, authConfig);
+    await assert(authState.authenticated, "The protected application shell was not visible after navigation.");
+  }
   await assert(!response || response.status() < 500, `Home page returned HTTP ${response?.status() || "unknown"}.`);
   return response;
 }
@@ -452,7 +659,7 @@ function candidatePaths(websiteBrief) {
 }
 
 async function verifyHomePage(page, websiteBrief) {
-  await goHome(page, websiteBrief.url);
+  await goHome(page, websiteBrief);
   const title = cleanText(await page.title());
   const body = await bodyText(page);
 
@@ -466,7 +673,7 @@ async function verifyHomePage(page, websiteBrief) {
 }
 
 async function verifyBranding(page, websiteBrief) {
-  await goHome(page, websiteBrief.url);
+  await goHome(page, websiteBrief);
   const title = cleanText(await page.title()).toLowerCase();
   const body = (await bodyText(page)).toLowerCase();
   const host = cleanText(websiteBrief.host || new URL(websiteBrief.url).host).toLowerCase();
@@ -480,7 +687,7 @@ async function verifyBranding(page, websiteBrief) {
 }
 
 async function verifyCtaPresence(page, websiteBrief) {
-  await goHome(page, websiteBrief.url);
+  await goHome(page, websiteBrief);
   const linkCount = await page.locator("a").count();
   const buttonCount = await page.locator("button,[role='button']").count();
   await assert(linkCount + buttonCount > 0, "No navigation or call-to-action elements were found.");
@@ -508,10 +715,17 @@ async function writeJunitReport(summary) {
               item.error || "Test failed"
             )}</failure>`
           : "";
+      const skipped =
+        item.status === "blocked" || item.status === "notapplicable"
+          ? `\n      <skipped message="${escapeXml(item.classification || item.status)}">${escapeXml(
+              item.error || item.classification || item.status
+            )}</skipped>`
+          : "";
 
       return [
         `    <testcase classname="website-${escapeXml(summary.websiteBrief?.host || "site")}" name="${escapeXml(name)}" time="0.00">`,
         failure,
+        skipped,
         "    </testcase>",
       ]
         .filter(Boolean)
@@ -519,9 +733,12 @@ async function writeJunitReport(summary) {
     })
     .join("\n");
 
+  const failedCount = summary.results.filter((item) => item.status === "failed").length;
+  const skippedCount = summary.results.filter((item) => item.status === "blocked" || item.status === "notapplicable").length;
+
   const junitXml = `<?xml version="1.0" encoding="UTF-8"?>
-<testsuites name="Website Automation" tests="${summary.total}" failures="${summary.failed}" errors="0" skipped="0">
-  <testsuite name="Website Automation" tests="${summary.total}" failures="${summary.failed}" errors="0" skipped="0">
+<testsuites name="Website Automation" tests="${summary.total}" failures="${failedCount}" errors="0" skipped="${skippedCount}">
+  <testsuite name="Website Automation" tests="${summary.total}" failures="${failedCount}" errors="0" skipped="${skippedCount}">
 ${testCaseXml}
   </testsuite>
 </testsuites>
@@ -652,7 +869,7 @@ async function publishGeneratedCaseResults(azureUpload, testCaseDrafts, results)
 
     pointUpdates.push({
       id: pointId,
-      outcome: result?.status === "passed" ? "passed" : "failed",
+      outcome: mapResultStatusToAzureOutcome(result?.status).toLowerCase(),
     });
   }
 
@@ -675,6 +892,31 @@ async function publishGeneratedCaseResults(azureUpload, testCaseDrafts, results)
     updatedCount: pointUpdates.length,
     suiteCases: suiteCases.length,
   };
+}
+
+function buildBlockedResult(testCase, classification, error) {
+  return {
+    id: testCase.id,
+    title: testCase.title,
+    status: mapClassificationToResultStatus(classification),
+    classification,
+    error,
+    pointId: testCase.pointId || null,
+    suiteId: testCase.suiteId || null,
+    planId: testCase.planId || null,
+    rev: testCase.rev || 1,
+  };
+}
+
+async function verifyAuthenticatedEntry(page, websiteBrief) {
+  const authConfig = websiteBrief?.authConfig;
+  await assert(Boolean(authConfig?.requireAuth), "Authentication smoke checks require APP_REQUIRE_AUTH=true.");
+  const authState = await ensureAuthenticatedSession(page, authConfig);
+  await assert(authState.authenticated, "The protected application shell was not reached after login.");
+  await assert(
+    (authState.sidebarModules || []).length > 0 || (authState.markerTexts || []).length > 0,
+    "Protected navigation or dashboard markers were not visible after login."
+  );
 }
 
 async function publishExistingCaseResults(loadedCases, results) {
@@ -744,7 +986,7 @@ async function publishExistingCaseResults(loadedCases, results) {
 
       return {
         id: resultId,
-        outcome: item.status === "passed" ? "Passed" : "Failed",
+        outcome: mapResultStatusToAzureOutcome(item.status),
         state: "Completed",
         comment: item.error || "",
         startedDate: startedAt.toISOString(),
@@ -775,7 +1017,7 @@ async function publishExistingCaseResults(loadedCases, results) {
 
     updatesBySuite.get(suiteId).push({
       id: pointId,
-      outcome: item.status === "passed" ? "passed" : "failed",
+      outcome: mapResultStatusToAzureOutcome(item.status).toLowerCase(),
     });
   }
 
@@ -807,7 +1049,7 @@ async function publishExistingCaseResults(loadedCases, results) {
 }
 
 async function verifyContentConsistency(page, websiteBrief) {
-  await goHome(page, websiteBrief.url);
+  await goHome(page, websiteBrief);
   const title = cleanText(await page.title()).toLowerCase();
   const body = (await bodyText(page)).toLowerCase();
   const keywords = summarizeContentFocus(websiteBrief);
@@ -827,7 +1069,7 @@ async function verifyNavigation(page, websiteBrief, testCase) {
   const match =
     paths.find((item) => aliases.some((alias) => item.toLowerCase().includes(alias.toLowerCase()))) || paths[0];
 
-  await goHome(page, websiteBrief.url);
+  await goHome(page, websiteBrief);
 
   if (match) {
     const targetUrl = new URL(match, websiteBrief.url).toString();
@@ -858,7 +1100,7 @@ async function verifyNavigation(page, websiteBrief, testCase) {
 
 async function verifyFeature(page, websiteBrief, testCase) {
   const aliases = extractFocusAliases(testCase);
-  await goHome(page, websiteBrief.url);
+  await goHome(page, websiteBrief);
 
   const title = cleanText(await page.title());
   const body = await bodyText(page);
@@ -897,7 +1139,7 @@ async function verifyFeature(page, websiteBrief, testCase) {
 
 async function verifyFlow(page, websiteBrief, testCase) {
   const aliases = extractFocusAliases(testCase);
-  await goHome(page, websiteBrief.url);
+  await goHome(page, websiteBrief);
 
   const title = cleanText(await page.title());
   const body = await bodyText(page);
@@ -933,7 +1175,7 @@ async function verifyFlow(page, websiteBrief, testCase) {
 
 async function verifyResponsive(page, websiteBrief) {
   await page.setViewportSize({ width: 1440, height: 1200 });
-  await goHome(page, websiteBrief.url);
+  await goHome(page, websiteBrief);
   await assert((await page.locator("h1, h2, h3").count()) > 0, "No visible heading found in desktop view.");
 
   await page.setViewportSize({ width: 390, height: 844 });
@@ -947,7 +1189,7 @@ async function verifyResponsive(page, websiteBrief) {
 }
 
 async function verifyAccessibility(page, websiteBrief) {
-  await goHome(page, websiteBrief.url);
+  await goHome(page, websiteBrief);
   const headingCount = await page.locator("h1, h2, h3").count();
   const linkCount = await page.locator("a").count();
   const buttonCount = await page.locator("button").count();
@@ -991,6 +1233,8 @@ async function runGeneratedCase(page, websiteBrief, testCase, index) {
   const kind = inferCaseKind(testCase, index);
 
   switch (kind) {
+    case "auth":
+      return verifyAuthenticatedEntry(page, websiteBrief);
     case "home":
       return verifyHomePage(page, websiteBrief);
     case "branding":
@@ -1017,6 +1261,12 @@ async function runGeneratedCase(page, websiteBrief, testCase, index) {
 }
 
 async function generateWebsiteDrafts(websiteBrief, options) {
+  if (websiteBrief?.source === "authenticated-app-discovery" || websiteBrief?.authenticated) {
+    return generateGroundedWebsiteTestCases(websiteBrief, {
+      maxCases: options.websiteTargetCaseCount || 30,
+    });
+  }
+
   const sharedOptions = {
     provider: options.provider || "openai",
     apiKey: options.openAiApiKey,
@@ -1048,27 +1298,57 @@ async function main() {
   const geminiApiKey = String(process.env.GEMINI_API_KEY || "").trim();
   const geminiModel = String(process.env.GEMINI_MODEL || "").trim();
   const geminiBaseUrl = String(process.env.GEMINI_BASE_URL || "").trim();
-  const websiteTargetCaseCount = parsePositiveInteger(readEnv("WEBSITE_TARGET_CASE_COUNT")) || 1000;
+  const websiteTargetCaseCount = parsePositiveInteger(readEnv("WEBSITE_TARGET_CASE_COUNT")) || 30;
   const provider = aiProvider === "gemini" || aiProvider === "openai"
     ? aiProvider
     : openAiApiKey
       ? "openai"
       : "gemini";
 
-  if (!runExistingCasesOnly && provider === "openai" && !openAiApiKey) {
-    throw new Error("OPENAI_API_KEY is required for automated website generation.");
-  }
-  if (!runExistingCasesOnly && provider === "gemini" && !geminiApiKey) {
-    throw new Error("GEMINI_API_KEY is required for automated website generation.");
-  }
-
   await fs.mkdir(bugDir, { recursive: true });
   await fs.mkdir(testResultsDir, { recursive: true });
 
-  const websiteBrief = await analyzeWebsite(websiteUrl);
+  const authConfig = buildAuthConfig(websiteUrl);
+  const missingAuthConfig = authConfig.requireAuth ? validateAuthConfig(authConfig) : [];
+  if (missingAuthConfig.length) {
+    const error = new AuthenticationError(
+      `Missing required authentication configuration: ${missingAuthConfig.join(", ")}`
+    );
+    await writeAuthGateFailureReport(error, websiteUrl, authConfig);
+    throw error;
+  }
+
+  const browser = await chromium.launch({ headless: true });
+  const page = await browser.newPage({ viewport: { width: 1440, height: 1200 } });
+  const failures = [];
+  const results = [];
+  const classificationCounts = new Map();
+  const screenshotFingerprints = new Map();
+  let stopEarlyReason = "";
+
+  let websiteBrief;
+  let authDiscovery = null;
+
+  try {
+    if (authConfig.requireAuth) {
+      await ensureAuthenticatedSession(page, authConfig);
+      authDiscovery = await discoverAuthenticatedApp(page, authConfig);
+      websiteBrief = buildAuthenticatedWebsiteBrief(websiteUrl, authDiscovery);
+      websiteBrief.authConfig = authConfig;
+    } else {
+      websiteBrief = await analyzeWebsite(websiteUrl);
+      websiteBrief.authConfig = authConfig;
+    }
+  } catch (error) {
+    await browser.close();
+    await writeAuthGateFailureReport(error, websiteUrl, authConfig);
+    throw error;
+  }
+
   const loadedCases = runExistingCasesOnly
     ? await loadExistingAzureDevOpsCases()
     : null;
+
   const testCaseDrafts = loadedCases || await generateWebsiteDrafts(websiteBrief, {
     provider,
     openAiApiKey,
@@ -1079,70 +1359,98 @@ async function main() {
     geminiBaseUrl,
     websiteTargetCaseCount,
   });
+
   const azureUpload = runExistingCasesOnly
     ? null
     : await uploadGeneratedCases(websiteBrief, testCaseDrafts).catch((error) => ({
         error: error.message,
       }));
 
-  const browser = await chromium.launch({ headless: true });
-  const page = await browser.newPage({ viewport: { width: 1440, height: 1200 } });
-  const failures = [];
-  const results = [];
-
   try {
     for (let index = 0; index < testCaseDrafts.testCases.length; index += 1) {
       const testCase = testCaseDrafts.testCases[index];
       try {
+        if (authConfig.requireAuth) {
+          await ensureAuthenticatedSession(page, authConfig, { skipNavigation: true });
+        }
+
         await runGeneratedCase(page, websiteBrief, testCase, index);
         results.push({
           id: testCase.id,
           title: testCase.title,
           status: "passed",
+          classification: "Passed",
           pointId: testCase.pointId || null,
           suiteId: testCase.suiteId || null,
           planId: testCase.planId || null,
           rev: testCase.rev || 1,
         });
       } catch (error) {
-        const screenshotPath = path.join(bugDir, `website-${testCase.id}.png`);
-        const markdownPath = path.join(bugDir, `website-${testCase.id}.md`);
+        const pageContext = await buildPageContext(page, authConfig);
+        const fingerprint = cleanText(
+          `${pageContext.url}::${pageContext.title}::${(pageContext.authMarkers || []).join("|")}::${(pageContext.sidebarModules || []).slice(0, 5).join("|")}`
+        );
+        const fingerprintCount = incrementCounter(screenshotFingerprints, fingerprint);
+        const classification = classifyFailure({
+          error,
+          pageContext,
+          authState: pageContext,
+          screenshotFingerprintCount: fingerprintCount,
+        });
+        incrementCounter(classificationCounts, classification);
 
-        await page.screenshot({ path: screenshotPath, fullPage: true });
-        const bugReport = `# ${testCase.id} - ${testCase.title}
+        const artifactPrefix = isRealBugClassification(classification) ? `website-${testCase.id}` : `diagnostic-${testCase.id}`;
+        const screenshotPath = path.join(bugDir, `${artifactPrefix}.png`);
+        const markdownPath = path.join(bugDir, `${artifactPrefix}.md`);
 
-## Steps
-${testCase.steps.map((step, stepIndex) => `${stepIndex + 1}. ${step}`).join("\n")}
-
-## Expected
-${testCase.expectedResult}
-
-## Actual
-${error.message}
-`;
-        await fs.writeFile(markdownPath, bugReport, "utf8");
+        await page.screenshot({ path: screenshotPath, fullPage: true }).catch(() => {});
+        await fs.writeFile(
+          markdownPath,
+          buildFailureMarkdown(
+            testCase,
+            {
+              actual: error.message,
+              classification,
+            },
+            pageContext
+          ),
+          "utf8"
+        );
 
         failures.push({
           id: testCase.id,
           title: testCase.title,
           actual: error.message,
+          classification,
           screenshot: screenshotPath,
-          bugReport: markdownPath,
+          report: markdownPath,
+          pageContext,
         });
-        results.push({
-          id: testCase.id,
-          title: testCase.title,
-          status: "failed",
-          error: error.message,
-          pointId: testCase.pointId || null,
-          suiteId: testCase.suiteId || null,
-          planId: testCase.planId || null,
-          rev: testCase.rev || 1,
-        });
+
+        results.push(buildBlockedResult(testCase, classification, error.message));
+
+        if (classification === "Authentication/access issue") {
+          stopEarlyReason = error.message;
+          break;
+        }
       }
     }
   } finally {
     await browser.close();
+  }
+
+  if (stopEarlyReason) {
+    for (const testCase of testCaseDrafts.testCases.slice(results.length)) {
+      const classification = "Authentication/access issue";
+      incrementCounter(classificationCounts, classification);
+      results.push(
+        buildBlockedResult(
+          testCase,
+          classification,
+          `Execution stopped early after the authenticated session gate failed: ${stopEarlyReason}`
+        )
+      );
+    }
   }
 
   const summary = {
@@ -1150,9 +1458,29 @@ ${error.message}
     aiProvider: provider,
     generationSource: runExistingCasesOnly ? "azure-devops-suite" : testCaseDrafts.generationSource,
     azureUpload,
+    gating: {
+      secretValidation: "passed",
+      loginValidation: authConfig.requireAuth ? "passed" : "not-required",
+      authenticatedSmoke: authConfig.requireAuth ? "passed" : "not-required",
+    },
+    auth: {
+      requireAuth: authConfig.requireAuth,
+      loginUrl: authConfig.loginUrl,
+      postLoginUrl: authConfig.postLoginUrl,
+      discoveredModules: authDiscovery?.sidebarModules || [],
+      discoveredPages: authDiscovery?.pages?.length || 0,
+    },
+    execution: {
+      stoppedEarly: Boolean(stopEarlyReason),
+      stopReason: stopEarlyReason || "",
+    },
     total: testCaseDrafts.testCases.length,
     passed: results.filter((item) => item.status === "passed").length,
-    failed: failures.length,
+    failed: results.filter((item) => item.status === "failed").length,
+    blocked: results.filter((item) => item.status === "blocked").length,
+    notApplicable: results.filter((item) => item.status === "notapplicable").length,
+    failureClassifications: mapToObject(classificationCounts),
+    repeatedPageFingerprints: mapToObject(screenshotFingerprints),
     websiteBrief,
     testCases: testCaseDrafts.testCases,
     results,
@@ -1168,9 +1496,7 @@ ${error.message}
   }));
   summary.azureResultPublish = azureResultPublish;
 
-  await writeJunitReport(summary);
-  await fs.writeFile(reportPath, JSON.stringify(summary, null, 2), "utf8");
-
+  await writeSummaryArtifacts(summary);
   console.log(JSON.stringify(summary, null, 2));
 }
 

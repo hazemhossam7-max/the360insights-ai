@@ -9,75 +9,165 @@ parameters:
     displayName: Website URL
     type: string
     default: ""
-
-pool:
-  vmImage: "ubuntu-latest"
+  - name: runMode
+    displayName: Run mode
+    type: string
+    default: "generate-grounded"
+    values:
+      - "generate-grounded"
+      - "run-existing-suite"
 
 variables:
   CI: "true"
   PLAYWRIGHT_JUNIT_OUTPUT_NAME: "junit.xml"
 
-steps:
-- checkout: self
-  clean: true
+stages:
+- stage: Preflight
+  displayName: "Authentication preflight"
+  jobs:
+  - job: Preflight
+    displayName: "Validate secrets and authenticated smoke"
+    pool:
+      vmImage: "ubuntu-latest"
+    steps:
+    - checkout: self
+      clean: true
 
-- task: UseNode@1
-  inputs:
-    version: "20.x"
-  displayName: "Use Node.js 20"
+    - task: UseNode@1
+      inputs:
+        version: "20.x"
+      displayName: "Use Node.js 20"
 
-- script: npm ci
-  displayName: "Install dependencies"
+    - script: npm ci
+      displayName: "Install dependencies"
 
-- script: npx playwright install --with-deps chromium
-  displayName: "Install Playwright browser and dependencies"
+    - script: npx playwright install --with-deps chromium
+      displayName: "Install Playwright browser and dependencies"
 
-- ${{ if ne(parameters.websiteUrl, '') }}:
-  - script: node website_qa_runner.mjs "${{ parameters.websiteUrl }}"
-    displayName: "Run existing Azure DevOps website suite cases"
-    env:
-      RUN_EXISTING_AZDO_CASES_ONLY: "true"
-      AZDO_PROJECT_URL: $(AZDO_PROJECT_URL)
-      OPENAI_API_KEY: $(OPENAI_API_KEY)
-      OPENAI_MODEL: $(OPENAI_MODEL)
-      OPENAI_BASE_URL: $(OPENAI_BASE_URL)
-      AI_PROVIDER: openai
-      AZDO_ORG_URL: $(AZDO_ORG_URL)
-      SYSTEM_TEAMFOUNDATIONCOLLECTIONURI: $(System.TeamFoundationCollectionUri)
-      AZDO_PROJECT: $(AZDO_PROJECT)
-      SYSTEM_TEAMPROJECT: $(System.TeamProject)
-      AZDO_PAT: $(AZDO_PAT)
-      SYSTEM_ACCESSTOKEN: $(System.AccessToken)
-      AZDO_TEST_PLAN_ID: $(AZDO_TEST_PLAN_ID)
-      AZDO_TEST_SUITE_ID: $(AZDO_TEST_SUITE_ID)
+    - script: |
+        set -eu
+        : "${APP_REQUIRE_AUTH:=true}"
+        if [ "$APP_REQUIRE_AUTH" = "true" ] || [ "$APP_REQUIRE_AUTH" = "1" ]; then
+          [ -n "${APP_LOGIN_URL:-}" ] || { echo "APP_LOGIN_URL is required"; exit 1; }
+          [ -n "${APP_USERNAME:-}" ] || { echo "APP_USERNAME is required"; exit 1; }
+          [ -n "${APP_PASSWORD:-}" ] || { echo "APP_PASSWORD is required"; exit 1; }
+        fi
+      displayName: "Validate secure auth variables"
+      env:
+        APP_REQUIRE_AUTH: $(APP_REQUIRE_AUTH)
+        APP_LOGIN_URL: $(APP_LOGIN_URL)
+        APP_USERNAME: $(APP_USERNAME)
+        APP_PASSWORD: $(APP_PASSWORD)
 
-- script: |
-    mkdir -p "$(Build.SourcesDirectory)/bug_reports"
-    mkdir -p "$(Build.SourcesDirectory)/test-results"
-  displayName: "Ensure artifact directories exist"
-  condition: succeededOrFailed()
+    - ${{ if ne(parameters.websiteUrl, '') }}:
+      - script: node authenticated_smoke_check.mjs "${{ parameters.websiteUrl }}"
+        displayName: "Run authenticated smoke check"
+        env:
+          APP_REQUIRE_AUTH: $(APP_REQUIRE_AUTH)
+          APP_LOGIN_URL: $(APP_LOGIN_URL)
+          APP_POST_LOGIN_URL: $(APP_POST_LOGIN_URL)
+          APP_USERNAME: $(APP_USERNAME)
+          APP_PASSWORD: $(APP_PASSWORD)
+          APP_USERNAME_SELECTOR: $(APP_USERNAME_SELECTOR)
+          APP_PASSWORD_SELECTOR: $(APP_PASSWORD_SELECTOR)
+          APP_SUBMIT_SELECTOR: $(APP_SUBMIT_SELECTOR)
+          APP_SUCCESS_SELECTORS: $(APP_SUCCESS_SELECTORS)
+          APP_DISCOVERY_MAX_PAGES: $(APP_DISCOVERY_MAX_PAGES)
 
-- task: PublishTestResults@2
-  displayName: "Publish JUnit test results"
-  condition: succeededOrFailed()
-  inputs:
-    testResultsFormat: "JUnit"
-    testResultsFiles: "$(Build.SourcesDirectory)/test-results/junit.xml"
-    failTaskOnFailedTests: false
-    testRunTitle: "Existing Azure DevOps Website Suite Automation"
+    - script: |
+        mkdir -p "$(Build.SourcesDirectory)/test-results"
+      displayName: "Ensure preflight artifact directory exists"
+      condition: succeededOrFailed()
 
-- task: PublishPipelineArtifact@1
-  displayName: "Publish suite bug reports"
-  condition: succeededOrFailed()
-  inputs:
-    targetPath: "$(Build.SourcesDirectory)/bug_reports"
-    artifact: "bug_reports"
-    publishLocation: "pipeline"
+    - task: PublishPipelineArtifact@1
+      displayName: "Publish preflight results"
+      condition: succeededOrFailed()
+      inputs:
+        targetPath: "$(Build.SourcesDirectory)/test-results"
+        artifact: "preflight-results"
+        publishLocation: "pipeline"
 
-- task: PublishPipelineArtifact@1
-  displayName: "Publish raw test artifacts"
-  condition: succeededOrFailed()
-  inputs:
-    targetPath: "$(Build.SourcesDirectory)/test-results"
-    artifact: "test-results"
-    publishLocation: "pipeline"
+- stage: Execute
+  displayName: "Authenticated execution"
+  dependsOn: Preflight
+  condition: succeeded('Preflight')
+  jobs:
+  - job: Execute
+    displayName: "Run authenticated suite"
+    pool:
+      vmImage: "ubuntu-latest"
+    steps:
+    - checkout: self
+      clean: true
+
+    - task: UseNode@1
+      inputs:
+        version: "20.x"
+      displayName: "Use Node.js 20"
+
+    - script: npm ci
+      displayName: "Install dependencies"
+
+    - script: npx playwright install --with-deps chromium
+      displayName: "Install Playwright browser and dependencies"
+
+    - ${{ if ne(parameters.websiteUrl, '') }}:
+      - script: node website_qa_runner.mjs "${{ parameters.websiteUrl }}"
+        displayName: "Run authentication-aware website automation"
+        env:
+          RUN_EXISTING_AZDO_CASES_ONLY: ${{ eq(parameters.runMode, 'run-existing-suite') }}
+          WEBSITE_TARGET_CASE_COUNT: $(WEBSITE_TARGET_CASE_COUNT)
+          AZDO_PROJECT_URL: $(AZDO_PROJECT_URL)
+          OPENAI_API_KEY: $(OPENAI_API_KEY)
+          OPENAI_MODEL: $(OPENAI_MODEL)
+          OPENAI_BASE_URL: $(OPENAI_BASE_URL)
+          AI_PROVIDER: openai
+          AZDO_ORG_URL: $(AZDO_ORG_URL)
+          SYSTEM_TEAMFOUNDATIONCOLLECTIONURI: $(System.TeamFoundationCollectionUri)
+          AZDO_PROJECT: $(AZDO_PROJECT)
+          SYSTEM_TEAMPROJECT: $(System.TeamProject)
+          AZDO_PAT: $(AZDO_PAT)
+          SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+          AZDO_TEST_PLAN_ID: $(AZDO_TEST_PLAN_ID)
+          AZDO_TEST_SUITE_ID: $(AZDO_TEST_SUITE_ID)
+          APP_REQUIRE_AUTH: $(APP_REQUIRE_AUTH)
+          APP_LOGIN_URL: $(APP_LOGIN_URL)
+          APP_POST_LOGIN_URL: $(APP_POST_LOGIN_URL)
+          APP_USERNAME: $(APP_USERNAME)
+          APP_PASSWORD: $(APP_PASSWORD)
+          APP_USERNAME_SELECTOR: $(APP_USERNAME_SELECTOR)
+          APP_PASSWORD_SELECTOR: $(APP_PASSWORD_SELECTOR)
+          APP_SUBMIT_SELECTOR: $(APP_SUBMIT_SELECTOR)
+          APP_SUCCESS_SELECTORS: $(APP_SUCCESS_SELECTORS)
+          APP_DISCOVERY_MAX_PAGES: $(APP_DISCOVERY_MAX_PAGES)
+
+    - script: |
+        mkdir -p "$(Build.SourcesDirectory)/bug_reports"
+        mkdir -p "$(Build.SourcesDirectory)/test-results"
+      displayName: "Ensure artifact directories exist"
+      condition: succeededOrFailed()
+
+    - task: PublishTestResults@2
+      displayName: "Publish JUnit test results"
+      condition: succeededOrFailed()
+      inputs:
+        testResultsFormat: "JUnit"
+        testResultsFiles: "$(Build.SourcesDirectory)/test-results/junit.xml"
+        failTaskOnFailedTests: false
+        testRunTitle: "Authentication-aware Website Suite Automation"
+
+    - task: PublishPipelineArtifact@1
+      displayName: "Publish suite bug reports"
+      condition: succeededOrFailed()
+      inputs:
+        targetPath: "$(Build.SourcesDirectory)/bug_reports"
+        artifact: "bug_reports"
+        publishLocation: "pipeline"
+
+    - task: PublishPipelineArtifact@1
+      displayName: "Publish raw test artifacts"
+      condition: succeededOrFailed()
+      inputs:
+        targetPath: "$(Build.SourcesDirectory)/test-results"
+        artifact: "test-results"
+        publishLocation: "pipeline"
