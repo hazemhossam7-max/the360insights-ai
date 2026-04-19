@@ -140,9 +140,8 @@ function mapToObject(map) {
 function mapClassificationToResultStatus(classification) {
   switch (cleanText(classification).toLowerCase()) {
     case "product bug":
-      return "failed";
     case "unsupported/unconfirmed feature assumption":
-      return "notapplicable";
+      return "failed";
     case "authentication/access issue":
     case "automation issue":
     case "environment/test setup issue":
