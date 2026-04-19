@@ -1533,13 +1533,17 @@ async function main() {
     failures,
   };
 
-  const azureResultPublish = await (
-    runExistingCasesOnly
-      ? publishExistingCaseResults(loadedCases, results)
-      : executeGeneratedCases
-        ? publishGeneratedCaseResults(azureUpload, testCaseDrafts, results)
-        : null
-  ).catch((error) => ({
+  const azureResultPublish = await (async () => {
+    if (runExistingCasesOnly) {
+      return publishExistingCaseResults(loadedCases, results);
+    }
+
+    if (executeGeneratedCases) {
+      return publishGeneratedCaseResults(azureUpload, testCaseDrafts, results);
+    }
+
+    return null;
+  })().catch((error) => ({
     error: error.message,
   }));
   summary.azureResultPublish = azureResultPublish;
