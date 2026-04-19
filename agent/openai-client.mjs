@@ -2,6 +2,20 @@ function trimTrailingSlash(value) {
   return String(value || "").replace(/\/+$/, "");
 }
 
+function isUnresolvedPlaceholder(value) {
+  const text = String(value || "").trim();
+  return /^\$\([^)]+\)$/.test(text) || /^\$\{[^}]+\}$/.test(text);
+}
+
+function normalizeBaseUrl(value) {
+  const raw = String(value || "").trim();
+  if (!raw || isUnresolvedPlaceholder(raw)) {
+    return "https://api.openai.com";
+  }
+
+  return trimTrailingSlash(raw);
+}
+
 function extractOutputText(response) {
   if (typeof response?.output_text === "string" && response.output_text.trim()) {
     return response.output_text;
@@ -70,7 +84,7 @@ function buildSchema(targetCaseCount = 1) {
 export function createOpenAIClient(config) {
   const apiKey = String(config.apiKey || "").trim();
   const model = String(config.model || "gpt-4o-mini").trim();
-  const baseUrl = trimTrailingSlash(config.baseUrl || "https://api.openai.com");
+  const baseUrl = normalizeBaseUrl(config.baseUrl);
 
   if (!apiKey) {
     throw new Error("OPENAI_API_KEY is required for AI generation.");
