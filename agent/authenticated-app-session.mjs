@@ -121,6 +121,10 @@ export function buildAuthConfig(baseUrl, env = process.env) {
   const requireAuth = parseBoolean(env.APP_REQUIRE_AUTH, true);
   const loginUrl = inferLoginUrl(websiteUrl, env.APP_LOGIN_URL);
   const postLoginUrl = cleanText(env.APP_POST_LOGIN_URL);
+  const parsedMaxDiscoveryPages = Number(env.APP_DISCOVERY_MAX_PAGES);
+  const maxDiscoveryPages = Number.isFinite(parsedMaxDiscoveryPages)
+    ? Math.max(1, parsedMaxDiscoveryPages)
+    : 8;
 
   return {
     requireAuth,
@@ -145,7 +149,7 @@ export function buildAuthConfig(baseUrl, env = process.env) {
       ...parseList(env.APP_SUCCESS_SELECTORS),
       ...DEFAULT_SUCCESS_SELECTORS,
     ]),
-    maxDiscoveryPages: Math.max(1, Number(env.APP_DISCOVERY_MAX_PAGES || 8) || 8),
+    maxDiscoveryPages,
   };
 }
 
@@ -260,10 +264,6 @@ async function detectRedirectPendingSuccess(page) {
 }
 
 async function pageLooksLikeLogin(page, authConfig, options = {}) {
-  if (options.ignoreRedirectPending) {
-    return false;
-  }
-
   const passwordField = await firstVisibleLocator(page, authConfig.passwordSelectors);
   if (passwordField) {
     return true;
@@ -298,9 +298,7 @@ async function waitForAuthenticatedOutcome(page, authConfig, timeoutMs) {
   while (Date.now() - startedAt < timeoutMs) {
     const authState = await captureAuthenticatedUiState(page, authConfig);
     const redirectPending = await detectRedirectPendingSuccess(page);
-    const stillOnLogin = await pageLooksLikeLogin(page, authConfig, {
-      ignoreRedirectPending: redirectPending.active,
-    });
+    const stillOnLogin = await pageLooksLikeLogin(page, authConfig);
 
     lastState = {
       ...authState,

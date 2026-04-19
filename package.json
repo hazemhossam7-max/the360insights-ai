@@ -6,6 +6,7 @@
   "scripts": {
     "serve": "node server.js",
     "agent:serve": "node agent/server.mjs",
+    "test:unit": "node tests/unit/authenticated-app-session.test.mjs",
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",
     "test:e2e:legacy": "node qa_runner.mjs",
