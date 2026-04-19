@@ -16,6 +16,7 @@ import {
 } from "./agent/authenticated-app-session.mjs";
 import { generateGroundedWebsiteTestCases } from "./agent/grounded-website-testcases.mjs";
 import { classifyFailure, isRealBugClassification } from "./agent/failure-classifier.mjs";
+import { resolveWebsiteGenerationMode, shouldUseGroundedGenerator } from "./agent/website-generation-strategy.mjs";
 
 const root = process.cwd();
 const bugDir = path.join(root, "bug_reports");
@@ -1263,7 +1264,11 @@ async function runGeneratedCase(page, websiteBrief, testCase, index) {
 }
 
 async function generateWebsiteDrafts(websiteBrief, options) {
-  if (websiteBrief?.source === "authenticated-app-discovery" || websiteBrief?.authenticated) {
+  const websiteGenerationMode = resolveWebsiteGenerationMode(
+    options.websiteGenerationMode || process.env.WEBSITE_CASE_GENERATOR
+  );
+
+  if (shouldUseGroundedGenerator(websiteBrief, websiteGenerationMode)) {
     return generateGroundedWebsiteTestCases(websiteBrief, {
       maxCases: options.websiteTargetCaseCount || 30,
     });
@@ -1281,6 +1286,7 @@ async function generateWebsiteDrafts(websiteBrief, options) {
 
   return generateTestCasesForWebsite(websiteBrief, {
     ...sharedOptions,
+    websiteTargetCaseCount: options.websiteTargetCaseCount,
     allowHeuristicFallback: "true",
   });
 }
@@ -1301,6 +1307,7 @@ async function main() {
   const geminiModel = String(process.env.GEMINI_MODEL || "").trim();
   const geminiBaseUrl = String(process.env.GEMINI_BASE_URL || "").trim();
   const websiteTargetCaseCount = parsePositiveInteger(readEnv("WEBSITE_TARGET_CASE_COUNT")) || 30;
+  const websiteGenerationMode = resolveWebsiteGenerationMode(readEnv("WEBSITE_CASE_GENERATOR"));
   const provider = aiProvider === "gemini" || aiProvider === "openai"
     ? aiProvider
     : openAiApiKey
@@ -1360,6 +1367,7 @@ async function main() {
     geminiModel,
     geminiBaseUrl,
     websiteTargetCaseCount,
+    websiteGenerationMode,
   });
 
   const azureUpload = runExistingCasesOnly

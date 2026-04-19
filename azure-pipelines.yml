@@ -9,12 +9,17 @@ parameters:
     displayName: Website URL
     type: string
     default: ""
+  - name: targetCaseCount
+    displayName: Target test case count
+    type: number
+    default: 30
   - name: runMode
     displayName: Run mode
     type: string
     default: "generate-grounded"
     values:
       - "generate-grounded"
+      - "generate-openai"
       - "run-existing-suite"
 
 variables:
@@ -116,7 +121,8 @@ stages:
         displayName: "Run authentication-aware website automation"
         env:
           RUN_EXISTING_AZDO_CASES_ONLY: ${{ eq(parameters.runMode, 'run-existing-suite') }}
-          WEBSITE_TARGET_CASE_COUNT: $(WEBSITE_TARGET_CASE_COUNT)
+          WEBSITE_TARGET_CASE_COUNT: ${{ parameters.targetCaseCount }}
+          WEBSITE_CASE_GENERATOR: ${{ parameters.runMode }}
           AZDO_PROJECT_URL: $(AZDO_PROJECT_URL)
           OPENAI_API_KEY: $(OPENAI_API_KEY)
           OPENAI_MODEL: $(OPENAI_MODEL)
