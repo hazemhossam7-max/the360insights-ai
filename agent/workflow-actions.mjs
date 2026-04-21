@@ -130,6 +130,8 @@ function entityConfig(actionType) {
         createLabels: ["Create Collection", "New Collection", "Add Collection", "Create", "New", "Add"],
         submitLabels: ["Create Collection", "Save Collection", "Create", "Save", "Submit"],
         deleteLabels: ["Delete Collection", "Delete", "Remove", "Archive"],
+        defaultColor: "gray",
+        defaultIcon: "folder",
       };
     case "create_training_plan":
     case "delete_training_plan":
@@ -206,6 +208,41 @@ function buildFieldSelectors(names, kind = "input") {
   }
 
   return unique(selectors);
+}
+
+function buildCollectionColorSelectors(color) {
+  const label = cleanText(color);
+  if (!label) {
+    return [];
+  }
+
+  const lower = label.toLowerCase();
+  return unique([
+    `[aria-label*="${label}" i]`,
+    `[title*="${label}" i]`,
+    `[data-color="${lower}"]`,
+    `[data-value="${lower}"]`,
+    `button[value="${lower}"]`,
+    `[role="radio"][aria-label*="${label}" i]`,
+    `text="${label}"`,
+  ]);
+}
+
+function buildCollectionIconSelectors(icon) {
+  const label = cleanText(icon);
+  if (!label) {
+    return [];
+  }
+
+  const lower = label.toLowerCase();
+  return unique([
+    `[aria-label*="${label}" i]`,
+    `[title*="${label}" i]`,
+    `[data-icon="${lower}"]`,
+    `[data-value="${lower}"]`,
+    `button[value="${lower}"]`,
+    `text="${label}"`,
+  ]);
 }
 
 async function locatorCount(locator) {
@@ -322,6 +359,8 @@ function buildRuntimeEntity(config, spec, runtime) {
     module: cleanText(spec?.module || config.moduleNames?.[0] || ""),
     name,
     description,
+    color: cleanText(spec?.color || spec?.input?.color || config?.defaultColor || ""),
+    icon: cleanText(spec?.icon || spec?.input?.icon || config?.defaultIcon || ""),
     createdAt: new Date().toISOString(),
   };
 }
@@ -364,7 +403,7 @@ async function executeCreateEntity(page, websiteBrief, spec, runtime, config) {
     page,
     unique([
       ...(spec?.locators?.descriptionInput ? [spec.locators.descriptionInput] : []),
-      ...buildFieldSelectors(["description", "notes", "summary"], "description"),
+      ...buildFieldSelectors(["description", "notes", "summary", "Add a description"], "description"),
     ]),
     descriptionValue
   );
@@ -384,6 +423,24 @@ async function executeCreateEntity(page, websiteBrief, spec, runtime, config) {
         interpolateTemplate(fieldValue, runtime)
       ).catch(() => {});
     }
+  }
+
+  if (config?.entityType === "collection") {
+    await clickFirstVisible(
+      page,
+      unique([
+        ...(spec?.locators?.colorOption ? [spec.locators.colorOption] : []),
+        ...buildCollectionColorSelectors(entity.color),
+      ])
+    ).catch(() => false);
+
+    await clickFirstVisible(
+      page,
+      unique([
+        ...(spec?.locators?.iconOption ? [spec.locators.iconOption] : []),
+        ...buildCollectionIconSelectors(entity.icon),
+      ])
+    ).catch(() => false);
   }
 
   const submitSelectors = unique([

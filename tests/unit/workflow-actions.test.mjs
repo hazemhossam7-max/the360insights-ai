@@ -53,6 +53,8 @@ class FakePage {
     this.savedEntities = [];
     this.deletedEntities = [];
     this.gotoHistory = [];
+    this.selectedColor = "";
+    this.selectedIcon = "";
 
     this.routes = new Map([
       ["https://example.com/app/collections", "collections"],
@@ -134,10 +136,12 @@ class FakePage {
         map.set('[role="button"]:has-text("Create Collection")', { onClick: () => this.openCollectionForm() });
         break;
       case "collection-form":
-        map.set('input[name="name"]', {});
-        map.set('textarea[name="description"]', {});
-        map.set('button:has-text("Save Collection")', { onClick: () => this.saveEntity("collection") });
-        map.set('[role="button"]:has-text("Save Collection")', { onClick: () => this.saveEntity("collection") });
+        map.set('input[placeholder*="Collection name" i]', {});
+        map.set('textarea[placeholder*="Add a description" i]', {});
+        map.set('[data-color="blue"]', { onClick: () => { this.selectedColor = "blue"; } });
+        map.set('[data-icon="folder"]', { onClick: () => { this.selectedIcon = "folder"; } });
+        map.set('button:has-text("Create Collection")', { onClick: () => this.saveEntity("collection") });
+        map.set('[role="button"]:has-text("Create Collection")', { onClick: () => this.saveEntity("collection") });
         break;
       case "collection-created":
         map.set('text="Delete Collection"', { onClick: () => this.sceneName = "collection-delete-confirm" });
@@ -179,9 +183,15 @@ class FakePage {
   }
 
   saveEntity(type) {
-    const name = this.fills.get('input[name="name"]') || "";
-    const description = this.fills.get('textarea[name="description"]') || "";
-    this.savedEntities.push({ type, name, description });
+    const name =
+      this.fills.get('input[name="name"]') ||
+      this.fills.get('input[placeholder*="Collection name" i]') ||
+      "";
+    const description =
+      this.fills.get('textarea[name="description"]') ||
+      this.fills.get('textarea[placeholder*="Add a description" i]') ||
+      "";
+    this.savedEntities.push({ type, name, description, color: this.selectedColor, icon: this.selectedIcon });
     this.sceneName = type === "collection" ? "collection-created" : "training-created";
     this.currentUrl = type === "collection"
       ? "https://example.com/app/collections/123"
@@ -246,11 +256,15 @@ const cases = [
           action: {
             type: "create_collection",
             module: "Collections",
+            color: "blue",
+            icon: "folder",
             locators: {
               createButton: 'button:has-text("Create Collection")',
-              nameInput: 'input[name="name"]',
-              descriptionInput: 'textarea[name="description"]',
-              submitButton: 'button:has-text("Save Collection")',
+              nameInput: 'input[placeholder*="Collection name" i]',
+              descriptionInput: 'textarea[placeholder*="Add a description" i]',
+              colorOption: '[data-color="blue"]',
+              iconOption: '[data-icon="folder"]',
+              submitButton: 'button:has-text("Create Collection")',
             },
           },
           assertions: [
@@ -274,7 +288,11 @@ const cases = [
       assert.equal(result.runtime.deletedEntities.length, 1);
       assert.equal(result.runtime.createdEntities[0].type, "collection");
       assert.match(result.runtime.createdEntities[0].name, /^Codex Collection /);
+      assert.equal(result.runtime.createdEntities[0].color, "blue");
+      assert.equal(result.runtime.createdEntities[0].icon, "folder");
       assert.equal(page.deletedEntities.length, 1);
+      assert.equal(page.selectedColor, "blue");
+      assert.equal(page.selectedIcon, "folder");
     },
   },
   {
