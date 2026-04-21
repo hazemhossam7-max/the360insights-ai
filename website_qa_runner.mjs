@@ -16,6 +16,7 @@ import {
 } from "./agent/authenticated-app-session.mjs";
 import { generateGroundedWebsiteTestCases } from "./agent/grounded-website-testcases.mjs";
 import { classifyFailure, isRealBugClassification } from "./agent/failure-classifier.mjs";
+import { executeWorkflowTestCase, hasWorkflowDefinition } from "./agent/workflow-actions.mjs";
 import {
   resolveWebsiteGenerationMode,
   shouldExecuteGeneratedCases,
@@ -1266,6 +1267,10 @@ async function verifyPerformance(page, websiteBrief, testCase) {
 }
 
 async function runGeneratedCase(page, websiteBrief, testCase, index) {
+  if (hasWorkflowDefinition(testCase)) {
+    return executeWorkflowTestCase(page, websiteBrief, testCase);
+  }
+
   const kind = inferCaseKind(testCase, index);
 
   switch (kind) {

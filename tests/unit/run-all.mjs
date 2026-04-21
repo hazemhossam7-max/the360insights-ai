@@ -4,3 +4,4 @@ await import("./website-openai-plan.test.mjs");
 await import("./ai-test-case-generator.test.mjs");
 await import("./openai-client.test.mjs");
 await import("./failure-classifier.test.mjs");
+await import("./workflow-actions.test.mjs");
