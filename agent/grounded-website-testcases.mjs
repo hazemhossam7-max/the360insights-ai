@@ -276,12 +276,12 @@ export function generateGroundedWebsiteTestCases(websiteBrief, options = {}) {
     drafts.push(...buildModuleCases(module, routeByModule.get(module.toLowerCase()) || ""));
   }
 
-  for (const page of pages.slice(0, 8)) {
-    drafts.push(...buildPageCases(page));
-  }
-
   if (hasModule(modules, "Collections")) {
     drafts.push(...buildCollectionWorkflowCases(routeByModule.get("collections") || ""));
+  }
+
+  for (const page of pages.slice(0, 8)) {
+    drafts.push(...buildPageCases(page));
   }
 
   drafts.push(...buildOptionalCases(pages));

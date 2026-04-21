@@ -947,6 +947,23 @@ async function verifyAuthenticatedEntry(page, websiteBrief) {
   );
 }
 
+function preferredCaseRoute(websiteBrief, testCase) {
+  const explicitRoute = cleanText(testCase?.route || "");
+  if (explicitRoute) {
+    return explicitRoute;
+  }
+
+  const moduleName = cleanText(testCase?.module || "").toLowerCase();
+  if (!moduleName) {
+    return "";
+  }
+
+  const matchingPage = (websiteBrief?.pages || []).find((page) =>
+    cleanText(page?.title || "").toLowerCase() === moduleName
+  );
+  return cleanText(matchingPage?.url || "");
+}
+
 async function publishExistingCaseResults(loadedCases, results) {
   const planId = parsePositiveInteger(loadedCases?.planId);
   const suiteIds = new Set((loadedCases?.suiteIds || []).map((value) => parsePositiveInteger(value)).filter(Boolean));
@@ -1128,7 +1145,15 @@ async function verifyNavigation(page, websiteBrief, testCase) {
 
 async function verifyFeature(page, websiteBrief, testCase) {
   const aliases = extractFocusAliases(testCase);
-  await goHome(page, websiteBrief);
+  const routeHint = preferredCaseRoute(websiteBrief, testCase);
+
+  if (routeHint) {
+    const response = await page.goto(new URL(routeHint, websiteBrief.url).toString(), { waitUntil: "domcontentloaded" });
+    await page.waitForLoadState("networkidle").catch(() => {});
+    await assert(!response || response.status() < 500, `Feature page returned HTTP ${response?.status() || "unknown"}.`);
+  } else {
+    await goHome(page, websiteBrief);
+  }
 
   const title = cleanText(await page.title());
   const body = await bodyText(page);
@@ -1163,7 +1188,9 @@ async function verifyFeature(page, websiteBrief, testCase) {
   }
 
   const paths = candidatePaths(websiteBrief);
-  const pathMatch = paths.find((item) => aliases.some((alias) => item.toLowerCase().includes(alias.toLowerCase())));
+  const pathMatch =
+    routeHint ||
+    paths.find((item) => aliases.some((alias) => item.toLowerCase().includes(alias.toLowerCase())));
   if (pathMatch) {
     const response = await page.goto(new URL(pathMatch, websiteBrief.url).toString(), { waitUntil: "domcontentloaded" });
     await page.waitForLoadState("networkidle").catch(() => {});
@@ -1176,7 +1203,15 @@ async function verifyFeature(page, websiteBrief, testCase) {
 
 async function verifyFlow(page, websiteBrief, testCase) {
   const aliases = extractFocusAliases(testCase);
-  await goHome(page, websiteBrief);
+  const routeHint = preferredCaseRoute(websiteBrief, testCase);
+
+  if (routeHint) {
+    const response = await page.goto(new URL(routeHint, websiteBrief.url).toString(), { waitUntil: "domcontentloaded" });
+    await page.waitForLoadState("networkidle").catch(() => {});
+    await assert(!response || response.status() < 500, `Flow page returned HTTP ${response?.status() || "unknown"}.`);
+  } else {
+    await goHome(page, websiteBrief);
+  }
 
   const title = cleanText(await page.title());
   const body = await bodyText(page);
@@ -1202,8 +1237,9 @@ async function verifyFlow(page, websiteBrief, testCase) {
   }
 
   const paths = candidatePaths(websiteBrief);
-  if (paths.length) {
-    const response = await page.goto(new URL(paths[0], websiteBrief.url).toString(), { waitUntil: "domcontentloaded" });
+  const fallbackPath = routeHint || paths[0];
+  if (fallbackPath) {
+    const response = await page.goto(new URL(fallbackPath, websiteBrief.url).toString(), { waitUntil: "domcontentloaded" });
     await page.waitForLoadState("networkidle").catch(() => {});
     await assert(!response || response.status() < 500, `User flow page returned HTTP ${response?.status() || "unknown"}.`);
     await assert(Boolean(cleanText(await page.title()) || (await bodyText(page))), "The flow destination page was empty.");

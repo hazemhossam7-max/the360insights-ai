@@ -39,6 +39,68 @@ const cases = [
     },
   },
   {
+    name: "generateGroundedWebsiteTestCases keeps the collection workflow inside the first 40 cases",
+    run() {
+      const suite = generateGroundedWebsiteTestCases(
+        {
+          url: "https://example.com/app",
+          title: "Dashboard",
+          sidebarModules: [
+            "Dashboard",
+            "Directory",
+            "Athlete 360°",
+            "Collections",
+            "Competitions",
+            "AI Opponent Analysis",
+            "Technical Analysis",
+            "Mental Analysis",
+            "Training Planner",
+            "Rank-Up Calculator",
+          ],
+          pages: [
+            {
+              title: "Collections",
+              url: "https://example.com/app/collections",
+              headings: ["Collections"],
+              buttons: ["Create Collection"],
+              forms: [{ summary: "name; description" }],
+              cards: [],
+            },
+            {
+              title: "Dashboard",
+              url: "https://example.com/app",
+              headings: ["Dashboard"],
+              buttons: ["Open"],
+              forms: [],
+              cards: [],
+            },
+            {
+              title: "Athletes",
+              url: "https://example.com/app/athletes",
+              headings: ["Athletes"],
+              buttons: ["Filter"],
+              forms: [],
+              cards: [],
+            },
+            {
+              title: "Competitions",
+              url: "https://example.com/app/competitions",
+              headings: ["Competitions"],
+              buttons: ["Advanced Filters"],
+              forms: [],
+              cards: [],
+            },
+          ],
+        },
+        { maxCases: 40 }
+      );
+
+      const titles = suite.testCases.map((item) => item.title);
+      assert.ok(titles.includes("Workflow: create collection and verify it persists after refresh"));
+      assert.ok(titles.indexOf("Workflow: create collection and verify it persists after refresh") < 40);
+    },
+  },
+  {
     name: "generateGroundedWebsiteTestCases omits collection workflow cases when collections are not discovered",
     run() {
       const suite = generateGroundedWebsiteTestCases(
