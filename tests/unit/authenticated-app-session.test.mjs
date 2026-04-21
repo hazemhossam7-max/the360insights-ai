@@ -111,6 +111,13 @@ class FakePage {
     }
   }
 
+  async reload() {
+    if (this.scene?.onReload) {
+      this.sceneName = this.scene.onReload;
+    }
+    return { status: () => 200 };
+  }
+
   url() {
     return this.scene?.url || "about:blank";
   }
@@ -535,6 +542,55 @@ const cases = [
           return true;
         }
       );
+    },
+  },
+  {
+    name: "ensureAuthenticatedSession refreshes once when the landing page title appears before auth markers hydrate",
+    async run() {
+      const authConfig = createAuthConfig();
+      const page = new FakePage({
+        loginUrl: authConfig.loginUrl,
+        websiteUrl: authConfig.websiteUrl,
+        postLoginUrl: authConfig.postLoginUrl,
+        scenes: {
+          blank: {
+            url: "about:blank",
+            title: "",
+            elements: {},
+          },
+          login: {
+            url: "https://example.com/login",
+            title: "Sign in",
+            afterSubmit: "landing-shell-delayed",
+            elements: {
+              'input[type="email"]': { visible: true },
+              'input[type="password"]': { visible: true },
+              'button[type="submit"]': { visible: true, action: "submit" },
+            },
+          },
+          "landing-shell-delayed": {
+            url: "https://example.com/app",
+            title: "Dashboard | Example App",
+            onReload: "authenticated",
+            elements: {},
+          },
+          authenticated: {
+            url: "https://example.com/app",
+            title: "Dashboard | Example App",
+            sidebarModules: ["Dashboard", "Reports"],
+            elements: {
+              nav: { visible: true, text: "Dashboard Reports" },
+            },
+          },
+        },
+      });
+
+      const session = await ensureAuthenticatedSession(page, authConfig);
+
+      assert.equal(session.authenticated, true);
+      assert.equal(session.loginAttempted, true);
+      assert.equal(session.recoveredByRefresh, true);
+      assert.deepEqual(session.sidebarModules, ["Dashboard", "Reports"]);
     },
   },
 ];

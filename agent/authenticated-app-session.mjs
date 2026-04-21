@@ -336,6 +336,32 @@ async function waitForAuthenticatedOutcome(page, authConfig, timeoutMs) {
   return lastState;
 }
 
+function normalizeComparableUrl(value) {
+  try {
+    const url = new URL(String(value || "").trim());
+    url.hash = "";
+    if (url.pathname !== "/") {
+      url.pathname = url.pathname.replace(/\/+$/, "");
+    }
+    return url.toString();
+  } catch {
+    return cleanText(value || "");
+  }
+}
+
+function looksLikeAuthenticatedLandingCandidate(authState, authConfig) {
+  const currentUrl = normalizeComparableUrl(authState?.currentUrl || "");
+  const targetUrls = unique([
+    normalizeComparableUrl(authConfig?.postLoginUrl || ""),
+    normalizeComparableUrl(authConfig?.websiteUrl || ""),
+  ]).filter(Boolean);
+
+  const onExpectedLanding = targetUrls.includes(currentUrl);
+  const title = cleanText(authState?.currentTitle || "");
+
+  return onExpectedLanding && Boolean(title);
+}
+
 export async function captureAuthenticatedUiState(page, authConfig) {
   const markerTexts = await collectVisibleMarkerTexts(page, authConfig.successSelectors);
   const sidebarModules = await page.evaluate(() => {
@@ -536,9 +562,29 @@ export async function ensureAuthenticatedSession(page, authConfig, options = {})
     }
   }
 
+  let refreshRecoveryAttempted = false;
+  if (!validated.authenticated && !validated.stillOnLogin && looksLikeAuthenticatedLandingCandidate(validated, authConfig)) {
+    refreshRecoveryAttempted = true;
+    await page.reload({ waitUntil: "domcontentloaded" }).catch(async () => {
+      const landingUrl = cleanText(authConfig.postLoginUrl || authConfig.websiteUrl);
+      if (landingUrl) {
+        await page.goto(landingUrl, { waitUntil: "domcontentloaded" }).catch(() => {});
+      }
+    });
+    await page.waitForLoadState("networkidle").catch(() => {});
+    await page.waitForTimeout(3000).catch(() => {});
+    validated = await waitForAuthenticatedOutcome(
+      page,
+      authConfig,
+      authConfig.forcedNavigationTimeoutMs
+    );
+  }
+
   if (!validated.authenticated || validated.stillOnLogin) {
     const transitionState = !validated.redirectPending
-      ? "authenticated_shell_missing"
+      ? refreshRecoveryAttempted
+        ? "authenticated_shell_missing_after_refresh"
+        : "authenticated_shell_missing"
       : forcedNavigationAttempted
         ? "redirect_stalled_on_login"
         : "credentials_submitted_waiting_redirect";
@@ -552,6 +598,7 @@ export async function ensureAuthenticatedSession(page, authConfig, options = {})
   return {
     ...validated,
     loginAttempted: true,
+    recoveredByRefresh: refreshRecoveryAttempted,
     loginUrl: authConfig.loginUrl,
     postLoginUrl: authConfig.postLoginUrl,
   };
