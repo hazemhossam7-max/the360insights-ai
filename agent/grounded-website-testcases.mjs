@@ -27,6 +27,36 @@ function buildCase({ title, category, module, route, steps, expectedResult, prio
   };
 }
 
+function buildWorkflowCase({
+  title,
+  category,
+  module,
+  route,
+  steps,
+  expectedResult,
+  action,
+  assertions = [],
+  cleanupActions = [],
+  priority = "High",
+  automationCandidate = true,
+}) {
+  return {
+    ...buildCase({
+      title,
+      category,
+      module,
+      route,
+      steps,
+      expectedResult,
+      priority,
+      automationCandidate,
+    }),
+    action,
+    assertions,
+    cleanupActions,
+  };
+}
+
 function buildModuleCases(module, route, title) {
   const label = cleanText(module || title || route || "module");
   return [
@@ -170,6 +200,51 @@ function buildOptionalCases(pages) {
   );
 }
 
+function hasModule(modules, label) {
+  const target = cleanText(label).toLowerCase();
+  return unique(modules).some((item) => cleanText(item).toLowerCase() === target);
+}
+
+function buildCollectionWorkflowCases(route) {
+  return [
+    buildWorkflowCase({
+      title: "Workflow: create collection and verify it persists after refresh",
+      category: "Workflow data creation tests",
+      module: "Collections",
+      route,
+      priority: "High",
+      steps: [
+        "Log into the protected application.",
+        "Open the Collections module.",
+        "Create a new collection with unique automation-generated data.",
+        "Confirm the collection appears after save.",
+        "Refresh the page and confirm the same collection is still visible.",
+      ],
+      expectedResult:
+        "A real collection can be created successfully, remains visible after save, and still exists after refresh.",
+      action: {
+        type: "create_collection",
+        module: "Collections",
+        route,
+        color: "blue",
+        icon: "folder",
+        locators: {
+          createButton: 'button:has-text("Create Collection")',
+          nameInput: 'input[placeholder*="Collection name" i]',
+          descriptionInput: 'textarea[placeholder*="Add a description" i]',
+          colorOption: '[data-color="blue"]',
+          iconOption: '[data-icon="folder"]',
+          submitButton: 'button:has-text("Create Collection")',
+        },
+      },
+      assertions: [
+        { type: "created_entity_visible", entityType: "collection" },
+        { type: "refresh_and_created_entity_visible", entityType: "collection" },
+      ],
+    }),
+  ];
+}
+
 export function generateGroundedWebsiteTestCases(websiteBrief, options = {}) {
   const maxCases = Math.max(1, Math.min(50, Number(options.maxCases || 30) || 30));
   const modules = unique(websiteBrief?.sidebarModules || websiteBrief?.featureCandidates?.map((item) => item?.feature));
@@ -203,6 +278,10 @@ export function generateGroundedWebsiteTestCases(websiteBrief, options = {}) {
 
   for (const page of pages.slice(0, 8)) {
     drafts.push(...buildPageCases(page));
+  }
+
+  if (hasModule(modules, "Collections")) {
+    drafts.push(...buildCollectionWorkflowCases(routeByModule.get("collections") || ""));
   }
 
   drafts.push(...buildOptionalCases(pages));

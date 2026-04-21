@@ -5,3 +5,4 @@ await import("./ai-test-case-generator.test.mjs");
 await import("./openai-client.test.mjs");
 await import("./failure-classifier.test.mjs");
 await import("./workflow-actions.test.mjs");
+await import("./grounded-website-testcases.test.mjs");

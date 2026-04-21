@@ -128,6 +128,18 @@ class FakePage {
 
   async waitForLoadState() {}
 
+  async reload() {
+    if (this.sceneName === "collection-created") {
+      this.sceneName = "collection-created";
+      return { status: () => 200 };
+    }
+    if (this.sceneName === "training-created") {
+      this.sceneName = "training-created";
+      return { status: () => 200 };
+    }
+    return { status: () => 200 };
+  }
+
   elementMap() {
     const map = new Map();
     switch (this.sceneName) {
@@ -269,6 +281,7 @@ const cases = [
           },
           assertions: [
             { type: "created_entity_visible", entityType: "collection" },
+            { type: "refresh_and_created_entity_visible", entityType: "collection" },
           ],
           cleanupActions: [
             {

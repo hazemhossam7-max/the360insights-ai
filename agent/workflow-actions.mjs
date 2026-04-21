@@ -569,6 +569,24 @@ async function runAssertion(page, assertion, runtime) {
       await assertTextVisible(page, [latest.name], `The created ${latest.type} was not visible after execution.`);
       return;
     }
+    case "refresh_and_created_entity_visible": {
+      const latest = latestCreatedEntity(runtime, spec.entityType || "");
+      if (!latest?.name) {
+        throw new Error("No created entity is available for refresh_and_created_entity_visible assertion.");
+      }
+      await page.reload({ waitUntil: "domcontentloaded" }).catch(async () => {
+        if (latest?.url) {
+          await page.goto(latest.url, { waitUntil: "domcontentloaded" });
+        }
+      });
+      await page.waitForLoadState("networkidle").catch(() => {});
+      await assertTextVisible(
+        page,
+        [latest.name],
+        `The created ${latest.type} was not visible after refreshing the page.`
+      );
+      return;
+    }
     case "url_includes": {
       const expected = cleanText(spec.value || spec.text || "");
       if (!expected) {
