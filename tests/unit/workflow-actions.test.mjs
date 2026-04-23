@@ -202,6 +202,8 @@ class FakePage {
 
   async waitForLoadState() {}
 
+  async waitForTimeout() {}
+
   async reload() {
     if (this.sceneName === "collection-created") {
       this.sceneName = "collection-created";

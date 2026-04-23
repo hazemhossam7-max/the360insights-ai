@@ -52,7 +52,7 @@ const cases = [
           reachedProtectedPage: true,
         },
         authState: {
-          authenticated: true,
+          reachedProtectedPage: true,
         },
       });
 

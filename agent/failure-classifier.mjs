@@ -16,6 +16,7 @@ export function classifyFailure({ error, pageContext, authState, screenshotFinge
   const reachedProtectedPage = Boolean(pageContext?.reachedProtectedPage);
   const explicitlyUnauthenticated = authState?.authenticated === false;
 
+  // Respect explicit classification set by the executor
   if (error?.classification === "authentication_access_issue") {
     return "Authentication/access issue";
   }
@@ -69,29 +70,28 @@ export function classifyFailure({ error, pageContext, authState, screenshotFinge
     return "Unsupported/unconfirmed feature assumption";
   }
 
+  // Executor gaps that are clearly automation issues, not product bugs
   if (
     includesAny(message, [
       "could not find a create action",
       "could not find a submit/save action",
       "could not find a name/title field",
-      "could not find any calculator input fields",
-      "could not find a search input",
-      "no created entity is available",
-      "intercepts pointer events",
-      "element is not enabled",
-      "remained unchanged after attempting to satisfy required inputs",
-    ])
+      "could not open the",
+      "could not find a calculate",
+      "no numeric inputs are available",
+      "no search input",
+      "no athlete cards",
+      "insufficient content",
+    ]) &&
+    reachedProtectedPage
   ) {
     return "Automation issue";
   }
 
-  if (!reachedProtectedPage || screenshotFingerprintCount >= 3) {
-    return "Automation issue";
+  // Repeated screenshot fingerprints suggest the page is stuck/looping
+  if (screenshotFingerprintCount > 2) {
+    return "Environment/test setup issue";
   }
 
   return "Product bug";
-}
-
-export function isRealBugClassification(classification) {
-  return cleanText(classification).toLowerCase() === "product bug";
 }
