@@ -9,6 +9,10 @@ function includesAny(text, patterns) {
   return patterns.some((pattern) => haystack.includes(pattern));
 }
 
+export function isRealBugClassification(classification) {
+  return cleanText(classification).toLowerCase() === "product bug";
+}
+
 export function classifyFailure({ error, pageContext, authState, screenshotFingerprintCount = 1 }) {
   const message = cleanText(error?.message || error || "");
   const currentUrl = cleanText(pageContext?.url || "").toLowerCase();
