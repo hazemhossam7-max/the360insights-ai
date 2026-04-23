@@ -101,8 +101,11 @@ const cases = [
     },
   },
   {
-    name: "generateGroundedWebsiteTestCases omits collection workflow cases when collections are not discovered",
+    name: "generateGroundedWebsiteTestCases always includes all 12 module workflow cases",
     run() {
+      // The grounded suite now unconditionally generates workflow cases for all
+      // 12 known target modules (using sidebar nav fallback when routes are not
+      // yet discovered). This ensures every module is exercised on first run.
       const suite = generateGroundedWebsiteTestCases(
         {
           url: "https://example.com/app",
@@ -122,9 +125,30 @@ const cases = [
         { maxCases: 50 }
       );
 
-      assert.equal(
-        suite.testCases.some((item) => item.title === "Workflow: create collection and verify it persists after refresh"),
-        false
+      // All 12 module workflow cases should always be present
+      const workflowTitles = suite.testCases
+        .filter((item) => item.action?.type)
+        .map((item) => item.action.type);
+
+      assert.ok(
+        workflowTitles.includes("create_collection"),
+        "Expected create_collection workflow to be included"
+      );
+      assert.ok(
+        workflowTitles.includes("search_in_directory"),
+        "Expected search_in_directory workflow to be included"
+      );
+      assert.ok(
+        workflowTitles.includes("verify_module_content"),
+        "Expected verify_module_content workflow to be included (Dashboard/Competitions etc.)"
+      );
+      assert.ok(
+        workflowTitles.includes("run_rank_calculator"),
+        "Expected run_rank_calculator workflow to be included"
+      );
+      assert.ok(
+        workflowTitles.includes("open_first_athlete"),
+        "Expected open_first_athlete workflow to be included"
       );
     },
   },

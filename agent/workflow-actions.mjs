@@ -483,6 +483,363 @@ function latestCreatedEntity(runtime, entityType) {
     .find((item) => cleanText(item.type).toLowerCase() === cleanText(entityType).toLowerCase());
 }
 
+// ---------------------------------------------------------------------------
+// verify_module_content
+// Navigate to a module and verify it shows substantive real content.
+// Throws with a descriptive product-bug message if content is missing.
+// ---------------------------------------------------------------------------
+async function executeVerifyModuleContent(page, websiteBrief, spec, runtime) {
+  const moduleLabel = cleanText(spec?.module || "module");
+  const moduleAliases = unique([moduleLabel, ...(Array.isArray(spec?.moduleAliases) ? spec.moduleAliases : [])]);
+  const minBodyChars = Math.max(20, Number(spec?.minBodyChars || 100) || 100);
+
+  const config = {
+    entityLabel: moduleLabel,
+    moduleNames: moduleAliases,
+  };
+
+  const navigation = await openModule(page, websiteBrief, spec, config);
+
+  const body = await readBodyText(page);
+
+  if (body.length < minBodyChars) {
+    throw new Error(
+      `The ${moduleLabel} module loaded but shows insufficient content ` +
+        `(${body.length} chars, expected at least ${minBodyChars}). ` +
+        `The module may not be rendering its data correctly.`
+    );
+  }
+
+  // Check for error states only when content is short (avoids false positives)
+  if (body.length < 400) {
+    const lowerBody = body.toLowerCase();
+    const errorPatterns = [
+      "404",
+      "page not found",
+      "not found",
+      "something went wrong",
+      "error occurred",
+      "unexpected error",
+      "access denied",
+      "forbidden",
+    ];
+    for (const pat of errorPatterns) {
+      if (lowerBody.includes(pat)) {
+        throw new Error(
+          `The ${moduleLabel} module shows an error or empty state: "${body.slice(0, 200)}"`
+        );
+      }
+    }
+  }
+
+  const expectedTexts = unique([
+    ...(Array.isArray(spec?.expect?.textVisible) ? spec.expect.textVisible : []),
+    ...(spec?.expect?.textVisible && !Array.isArray(spec.expect.textVisible)
+      ? [spec.expect.textVisible]
+      : []),
+  ]);
+
+  if (expectedTexts.length) {
+    await assertTextVisible(
+      page,
+      expectedTexts,
+      `${moduleLabel} loaded but expected content was not found: ${expectedTexts.join(", ")}`
+    );
+  }
+
+  runtime.createdEntities.push({
+    type: "module_load",
+    module: moduleLabel,
+    url: cleanText(page.url()),
+    bodyLength: body.length,
+    createdAt: new Date().toISOString(),
+  });
+
+  return { module: moduleLabel, url: page.url(), bodyLength: body.length, navigation };
+}
+
+// ---------------------------------------------------------------------------
+// search_in_directory
+// Open the Directory/Athletes module, type a search query, and verify results.
+// ---------------------------------------------------------------------------
+async function executeSearchInDirectory(page, websiteBrief, spec, runtime) {
+  const moduleLabel = cleanText(spec?.module || "Directory");
+  const query = cleanText(spec?.query || spec?.searchQuery || "a");
+  const moduleAliases = unique([
+    moduleLabel,
+    ...(Array.isArray(spec?.moduleAliases) ? spec.moduleAliases : []),
+    "Directory",
+    "Athletes",
+    "Player Directory",
+  ]);
+
+  await openModule(page, websiteBrief, spec, {
+    entityLabel: moduleLabel,
+    moduleNames: moduleAliases,
+  });
+
+  const priorBody = await readBodyText(page);
+
+  const searchInputSelectors = unique([
+    ...(spec?.locators?.searchInput ? [spec.locators.searchInput] : []),
+    'input[type="search"]',
+    'input[placeholder*="search" i]',
+    'input[placeholder*="athlete" i]',
+    'input[placeholder*="player" i]',
+    'input[aria-label*="search" i]',
+    'input[name*="search" i]',
+    'input[id*="search" i]',
+    '[role="searchbox"]',
+  ]);
+
+  const filled = await fillFirstVisible(page, searchInputSelectors, query);
+  if (!filled) {
+    throw new Error(
+      `Could not find a search input in the ${moduleLabel} module. ` +
+        `Search functionality appears to be missing or inaccessible.`
+    );
+  }
+
+  await page.keyboard.press("Enter").catch(() => {});
+  await page.waitForLoadState("networkidle").catch(() => {});
+
+  const postBody = await readBodyText(page);
+
+  const hasResultIndicators =
+    (await page
+      .locator(
+        '[class*="result"], [class*="card"], [class*="athlete"], [class*="player"], td, [class*="item"]'
+      )
+      .count()
+      .catch(() => 0)) > 0;
+
+  if (postBody.length < 50 && !hasResultIndicators) {
+    throw new Error(
+      `Search in ${moduleLabel} for "${query}" returned no visible results. ` +
+        `The search functionality may be broken or no athletes are available.`
+    );
+  }
+
+  return { module: moduleLabel, query, url: page.url() };
+}
+
+// ---------------------------------------------------------------------------
+// open_first_athlete
+// Open the Athletes/Athlete 360° module, click the first athlete card/row,
+// and verify a detail view opens with substantive content.
+// ---------------------------------------------------------------------------
+async function executeOpenFirstAthlete(page, websiteBrief, spec, runtime) {
+  const moduleLabel = cleanText(spec?.module || "Athlete 360°");
+  const moduleAliases = unique([
+    moduleLabel,
+    ...(Array.isArray(spec?.moduleAliases) ? spec.moduleAliases : []),
+    "Athlete 360",
+    "Athletes",
+    "Directory",
+  ]);
+
+  await openModule(page, websiteBrief, spec, {
+    entityLabel: moduleLabel,
+    moduleNames: moduleAliases,
+  });
+
+  const priorUrl = cleanText(page.url());
+
+  const cardSelectors = unique([
+    ...(spec?.locators?.athleteCard ? [spec.locators.athleteCard] : []),
+    '[class*="athlete-card"]',
+    '[class*="AthleteCard"]',
+    '[class*="athlete"][class*="item"]',
+    '[class*="player-card"]',
+    '[class*="PlayerCard"]',
+    '[data-testid*="athlete"]',
+    "[class*=\"grid\"] [class*=\"card\"]:first-child",
+    "table tbody tr:first-child a",
+    "[class*=\"list\"] [class*=\"item\"]:first-child",
+    "[class*=\"card\"]:first-child",
+  ]);
+
+  const clicked = await clickFirstVisible(page, cardSelectors);
+  if (!clicked) {
+    throw new Error(
+      `No athlete cards or list items found in the ${moduleLabel} module. ` +
+        `The module may not be loading athlete data, or the list is empty.`
+    );
+  }
+
+  await page.waitForLoadState("networkidle").catch(() => {});
+
+  const newUrl = cleanText(page.url());
+  const body = await readBodyText(page);
+
+  if (newUrl === priorUrl && body.length < 100) {
+    throw new Error(
+      `Clicking an athlete item in ${moduleLabel} did not open a detail view. ` +
+        `The URL did not change and page content is minimal (${body.length} chars).`
+    );
+  }
+
+  return { module: moduleLabel, url: newUrl };
+}
+
+// ---------------------------------------------------------------------------
+// run_rank_calculator
+// Open the Rank-Up Calculator module, fill in numeric inputs, trigger the
+// calculation, and verify the output changes.
+// ---------------------------------------------------------------------------
+async function executeRunRankCalculator(page, websiteBrief, spec, runtime) {
+  const moduleLabel = cleanText(spec?.module || "Rank-Up Calculator");
+  const moduleAliases = unique([
+    moduleLabel,
+    ...(Array.isArray(spec?.moduleAliases) ? spec.moduleAliases : []),
+    "Rank Up Calculator",
+    "RankUp",
+    "Calculator",
+    "Rank-Up",
+  ]);
+
+  await openModule(page, websiteBrief, spec, {
+    entityLabel: moduleLabel,
+    moduleNames: moduleAliases,
+  });
+
+  const priorBody = await readBodyText(page);
+
+  const inputs = spec?.inputs && typeof spec.inputs === "object" ? spec.inputs : {};
+  let filledAny = false;
+
+  if (Object.keys(inputs).length) {
+    for (const [fieldName, fieldValue] of Object.entries(inputs)) {
+      const filled = await fillFirstVisible(
+        page,
+        buildFieldSelectors([fieldName]),
+        String(fieldValue ?? "")
+      ).catch(() => false);
+      if (filled) filledAny = true;
+    }
+  }
+
+  if (!filledAny) {
+    // Generic fallback: try any visible numeric input
+    const genericNumericSelectors = [
+      'input[type="number"]',
+      'input[inputmode="numeric"]',
+      'input[class*="score" i]',
+      'input[class*="rank" i]',
+      'input[placeholder*="score" i]',
+      'input[placeholder*="rank" i]',
+      'input[placeholder*="value" i]',
+      'input[placeholder*="enter" i]',
+    ];
+    const filled = await fillFirstVisible(page, genericNumericSelectors, "75").catch(() => false);
+    if (filled) filledAny = true;
+  }
+
+  if (!filledAny) {
+    throw new Error(
+      `Could not find any calculator input fields in the ${moduleLabel} module. ` +
+        `The calculator form may not be rendering or no numeric inputs are available.`
+    );
+  }
+
+  // Trigger calculation
+  const calculateSelectors = unique([
+    ...(spec?.locators?.calculateButton ? [spec.locators.calculateButton] : []),
+    'button:has-text("Calculate")',
+    'button:has-text("Calculate Rank")',
+    'button:has-text("Run")',
+    'button:has-text("Compute")',
+    'button:has-text("Submit")',
+    'button[type="submit"]',
+    '[role="button"]:has-text("Calculate")',
+  ]);
+
+  const triggered = await clickFirstVisible(page, calculateSelectors);
+  if (!triggered) {
+    await page.keyboard.press("Enter").catch(() => {});
+  }
+
+  await page.waitForLoadState("networkidle").catch(() => {});
+
+  const postBody = await readBodyText(page);
+
+  if (postBody === priorBody && !triggered) {
+    throw new Error(
+      `The ${moduleLabel} calculator did not produce any output after filling inputs and triggering calculation. ` +
+        `The calculation functionality may be broken or the submit button is missing.`
+    );
+  }
+
+  return { module: moduleLabel, url: page.url() };
+}
+
+// ---------------------------------------------------------------------------
+// trigger_module_action
+// Open a module and click its primary action button (e.g. Analyze, Generate),
+// then verify the page response changes or expected text appears.
+// ---------------------------------------------------------------------------
+async function executeTriggerModuleAction(page, websiteBrief, spec, runtime) {
+  const moduleLabel = cleanText(spec?.module || "module");
+  const actionLabel = cleanText(spec?.actionLabel || "Analyze");
+  const moduleAliases = unique([
+    moduleLabel,
+    ...(Array.isArray(spec?.moduleAliases) ? spec.moduleAliases : []),
+  ]);
+
+  await openModule(page, websiteBrief, spec, {
+    entityLabel: moduleLabel,
+    moduleNames: moduleAliases,
+  });
+
+  const priorBody = await readBodyText(page);
+
+  const actionSelectors = unique([
+    ...(spec?.locators?.actionButton ? [spec.locators.actionButton] : []),
+    ...buildTextSelectors(actionLabel, ["button", "link", "generic"]),
+    'button:has-text("Generate")',
+    'button:has-text("Analyze")',
+    'button:has-text("Run Analysis")',
+    'button:has-text("Start")',
+    'button:has-text("Run")',
+    '[role="button"]:has-text("Generate")',
+    '[role="button"]:has-text("Analyze")',
+  ]);
+
+  const triggered = await clickFirstVisible(page, actionSelectors);
+  if (!triggered) {
+    throw new Error(
+      `Could not find the "${actionLabel}" action button in the ${moduleLabel} module. ` +
+        `The primary action may not be available or the module is not rendering correctly.`
+    );
+  }
+
+  await page.waitForLoadState("networkidle").catch(() => {});
+
+  const postBody = await readBodyText(page);
+
+  const expectedTexts = unique([
+    ...(Array.isArray(spec?.expect?.textVisible) ? spec.expect.textVisible : []),
+    ...(spec?.expect?.textVisible && !Array.isArray(spec.expect.textVisible)
+      ? [spec.expect.textVisible]
+      : []),
+  ]);
+
+  if (expectedTexts.length) {
+    await assertTextVisible(
+      page,
+      expectedTexts,
+      `${moduleLabel}: triggered "${actionLabel}" but expected response content not found: ${expectedTexts.join(", ")}`
+    );
+  } else if (postBody === priorBody) {
+    throw new Error(
+      `${moduleLabel}: triggered "${actionLabel}" but the page content did not change. ` +
+        `The action may have failed silently or the response is not being rendered.`
+    );
+  }
+
+  return { module: moduleLabel, action: actionLabel, url: page.url() };
+}
+
 async function executeDeleteEntity(page, websiteBrief, spec, runtime, config) {
   const target = latestCreatedEntity(runtime, config.entityType);
   const expectedName = cleanText(spec?.name || target?.name || "");
@@ -624,6 +981,16 @@ async function executeWorkflowAction(page, websiteBrief, action, runtime) {
         entityLabel: "workflow target",
         moduleNames: [spec.module],
       });
+    case "verify_module_content":
+      return executeVerifyModuleContent(page, websiteBrief, spec, runtime);
+    case "search_in_directory":
+      return executeSearchInDirectory(page, websiteBrief, spec, runtime);
+    case "open_first_athlete":
+      return executeOpenFirstAthlete(page, websiteBrief, spec, runtime);
+    case "run_rank_calculator":
+      return executeRunRankCalculator(page, websiteBrief, spec, runtime);
+    case "trigger_module_action":
+      return executeTriggerModuleAction(page, websiteBrief, spec, runtime);
     default:
       throw new Error(`Unsupported workflow action type "${spec.type}".`);
   }

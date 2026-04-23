@@ -35,6 +35,11 @@ class FakeLocator {
 
   async fill(value) {
     this.page.fills.set(this.selector, String(value ?? ""));
+    // Trigger any onFill handler registered for this element
+    const element = this.page.elementMap().get(this.selector);
+    if (element?.onFill) {
+      element.onFill(String(value ?? ""));
+    }
   }
 
   async innerText() {
@@ -60,7 +65,21 @@ class FakePage {
       ["https://example.com/app/collections", "collections"],
       ["https://example.com/app/training-planner", "training"],
       ["https://example.com/app/nutrition-plan", "nutrition"],
+      ["https://example.com/app/dashboard", "dashboard"],
+      ["https://example.com/app/directory", "directory"],
+      ["https://example.com/app/athlete-360", "athlete-360"],
+      ["https://example.com/app/rank-up-calculator", "rank-calculator"],
     ]);
+    this.keyboard = {
+      pressHistory: [],
+      press: async (key) => {
+        this.keyboard.pressHistory.push(key);
+        // Simulate Enter triggering search results in directory
+        if (key === "Enter" && this.sceneName === "directory-search-filled") {
+          this.sceneName = "directory-search-results";
+        }
+      },
+    };
   }
 
   bodyText() {
@@ -74,6 +93,36 @@ class FakePage {
     }
     if (this.sceneName === "collection-list") {
       return `Collections ${this.savedEntities.map((item) => item.name).join(" ")} ${this.deletedEntities.join(" ")}`;
+    }
+    if (this.sceneName === "dashboard") {
+      return "Dashboard | Athletes: 42 | Competitions: 8 | Recent Activity: Training session completed | Upcoming: National Championship";
+    }
+    if (this.sceneName === "dashboard-empty") {
+      return "";
+    }
+    if (this.sceneName === "directory") {
+      return "Directory Athletes Search";
+    }
+    if (this.sceneName === "directory-search-filled") {
+      return "Directory Athletes Search";
+    }
+    if (this.sceneName === "directory-search-results") {
+      return "Directory Athletes Search Results: John Smith Maria Garcia Carlos Lopez";
+    }
+    if (this.sceneName === "directory-no-search") {
+      return "Directory overview page without any search functionality";
+    }
+    if (this.sceneName === "athlete-360") {
+      return "Athlete 360 Overview John Smith Maria Garcia";
+    }
+    if (this.sceneName === "athlete-detail") {
+      return "John Smith | Speed: 9.2 | Strength: 8.8 | Technical Rating: 87 | Mental Rating: 82";
+    }
+    if (this.sceneName === "rank-calculator") {
+      return "Rank-Up Calculator Enter your metrics below";
+    }
+    if (this.sceneName === "rank-calculator-result") {
+      return "Rank-Up Calculator Result: Your projected rank is Gold III based on current performance metrics";
     }
     return "Dashboard";
   }
@@ -91,6 +140,20 @@ class FakePage {
         return "Training Planner";
       case "nutrition":
         return "Nutrition Plan";
+      case "dashboard":
+      case "dashboard-empty":
+        return "Dashboard";
+      case "directory":
+      case "directory-search-filled":
+      case "directory-search-results":
+      case "directory-no-search":
+        return "Directory";
+      case "athlete-360":
+      case "athlete-detail":
+        return "Athlete 360°";
+      case "rank-calculator":
+      case "rank-calculator-result":
+        return "Rank-Up Calculator";
       default:
         return "Dashboard";
     }
@@ -124,6 +187,17 @@ class FakePage {
       this.currentUrl = url;
     }
     return { status: () => 200 };
+  }
+
+  // Simulate a click on an athlete card navigating to detail
+  navigateToAthleteDetail() {
+    this.sceneName = "athlete-detail";
+    this.currentUrl = "https://example.com/app/athlete-360/john-smith";
+  }
+
+  // Simulate calculation producing output
+  runCalculation() {
+    this.sceneName = "rank-calculator-result";
   }
 
   async waitForLoadState() {}
@@ -177,6 +251,34 @@ class FakePage {
         break;
       case "training-created":
         map.set(`text="${this.savedEntities.find((item) => item.type === "training_plan")?.name || ""}"`, {});
+        break;
+      case "directory":
+        map.set('input[type="search"]', {
+          onClick: () => {},
+          onFill: (v) => {
+            this.sceneName = "directory-search-filled";
+          },
+        });
+        break;
+      case "directory-search-filled":
+        map.set('input[type="search"]', {});
+        break;
+      case "directory-search-results":
+        map.set('input[type="search"]', {});
+        break;
+      case "athlete-360":
+        map.set('[class*="card"]:first-child', {
+          onClick: () => this.navigateToAthleteDetail(),
+        });
+        map.set('[class*="athlete-card"]', {
+          onClick: () => this.navigateToAthleteDetail(),
+        });
+        break;
+      case "rank-calculator":
+        map.set('input[type="number"]', {});
+        map.set('button:has-text("Calculate")', {
+          onClick: () => this.runCalculation(),
+        });
         break;
       default:
         break;
@@ -233,6 +335,10 @@ const websiteBrief = {
     { title: "Collections", url: "https://example.com/app/collections" },
     { title: "Training Planner", url: "https://example.com/app/training-planner" },
     { title: "Nutrition Plan", url: "https://example.com/app/nutrition-plan" },
+    { title: "Dashboard", url: "https://example.com/app/dashboard" },
+    { title: "Directory", url: "https://example.com/app/directory" },
+    { title: "Athlete 360°", url: "https://example.com/app/athlete-360" },
+    { title: "Rank-Up Calculator", url: "https://example.com/app/rank-up-calculator" },
   ],
 };
 
@@ -341,6 +447,231 @@ const cases = [
       assert.equal(result.runtime.createdEntities.length, 1);
       assert.equal(result.runtime.createdEntities[0].name, "Codex Training Plan Alpha");
       assert.equal(result.runtime.cleanupErrors.length, 0);
+    },
+  },
+
+  // ---------------------------------------------------------------------------
+  // verify_module_content tests
+  // ---------------------------------------------------------------------------
+  {
+    name: "verify_module_content passes when module body has substantive content",
+    async run() {
+      const page = new FakePage();
+      const runtime = createWorkflowRuntime({ id: "TC-VMC-001" });
+      const result = await executeWorkflowTestCase(
+        page,
+        websiteBrief,
+        {
+          id: "TC-VMC-001",
+          action: {
+            type: "verify_module_content",
+            module: "Dashboard",
+            route: "https://example.com/app/dashboard",
+            minBodyChars: 50,
+          },
+          assertions: [],
+        },
+        runtime
+      );
+      assert.ok(result, "Expected a result");
+      assert.ok(result.actionResult?.bodyLength > 50, "Expected body length > 50");
+    },
+  },
+  {
+    name: "verify_module_content fails when module body is too short",
+    async run() {
+      const page = new FakePage();
+      page.sceneName = "dashboard-empty"; // overrides to empty body
+      // Override goto so it stays on dashboard-empty
+      page.routes.set("https://example.com/app/dashboard", "dashboard-empty");
+      const runtime = createWorkflowRuntime({ id: "TC-VMC-002" });
+      await assert.rejects(
+        () =>
+          executeWorkflowTestCase(
+            page,
+            websiteBrief,
+            {
+              id: "TC-VMC-002",
+              action: {
+                type: "verify_module_content",
+                module: "Dashboard",
+                route: "https://example.com/app/dashboard",
+                minBodyChars: 50,
+              },
+            },
+            runtime
+          ),
+        /Dashboard module loaded but shows insufficient content/
+      );
+    },
+  },
+
+  // ---------------------------------------------------------------------------
+  // search_in_directory tests
+  // ---------------------------------------------------------------------------
+  {
+    name: "search_in_directory passes when search fills and results appear",
+    async run() {
+      const page = new FakePage();
+      const runtime = createWorkflowRuntime({ id: "TC-SID-001" });
+      const result = await executeWorkflowTestCase(
+        page,
+        websiteBrief,
+        {
+          id: "TC-SID-001",
+          action: {
+            type: "search_in_directory",
+            module: "Directory",
+            route: "https://example.com/app/directory",
+            query: "John",
+          },
+          assertions: [],
+        },
+        runtime
+      );
+      assert.ok(result, "Expected a result");
+      assert.ok(
+        page.keyboard.pressHistory.includes("Enter"),
+        "Expected Enter key to be pressed for search"
+      );
+    },
+  },
+  {
+    name: "search_in_directory fails when no search input exists",
+    async run() {
+      const page = new FakePage();
+      // Use a scene with no search input
+      page.sceneName = "directory-no-search";
+      page.routes.set("https://example.com/app/directory", "directory-no-search");
+      const runtime = createWorkflowRuntime({ id: "TC-SID-002" });
+      await assert.rejects(
+        () =>
+          executeWorkflowTestCase(
+            page,
+            websiteBrief,
+            {
+              id: "TC-SID-002",
+              action: {
+                type: "search_in_directory",
+                module: "Directory",
+                route: "https://example.com/app/directory",
+                query: "a",
+              },
+            },
+            runtime
+          ),
+        /Could not find a search input/
+      );
+    },
+  },
+
+  // ---------------------------------------------------------------------------
+  // open_first_athlete tests
+  // ---------------------------------------------------------------------------
+  {
+    name: "open_first_athlete passes when athlete card click navigates to detail",
+    async run() {
+      const page = new FakePage();
+      const runtime = createWorkflowRuntime({ id: "TC-OFA-001" });
+      const result = await executeWorkflowTestCase(
+        page,
+        websiteBrief,
+        {
+          id: "TC-OFA-001",
+          action: {
+            type: "open_first_athlete",
+            module: "Athlete 360°",
+            route: "https://example.com/app/athlete-360",
+          },
+          assertions: [],
+        },
+        runtime
+      );
+      assert.ok(result, "Expected a result");
+      assert.match(
+        page.currentUrl,
+        /athlete/,
+        "Expected URL to change to athlete detail"
+      );
+    },
+  },
+  {
+    name: "open_first_athlete fails when no athlete cards are found",
+    async run() {
+      const page = new FakePage();
+      // Use dashboard scene which has no athlete cards
+      page.routes.set("https://example.com/app/athlete-360", "dashboard");
+      const runtime = createWorkflowRuntime({ id: "TC-OFA-002" });
+      await assert.rejects(
+        () =>
+          executeWorkflowTestCase(
+            page,
+            websiteBrief,
+            {
+              id: "TC-OFA-002",
+              action: {
+                type: "open_first_athlete",
+                module: "Athlete 360°",
+                route: "https://example.com/app/athlete-360",
+              },
+            },
+            runtime
+          ),
+        /No athlete cards or list items found/
+      );
+    },
+  },
+
+  // ---------------------------------------------------------------------------
+  // run_rank_calculator tests
+  // ---------------------------------------------------------------------------
+  {
+    name: "run_rank_calculator passes when inputs fill and calculate triggers",
+    async run() {
+      const page = new FakePage();
+      const runtime = createWorkflowRuntime({ id: "TC-RRC-001" });
+      const result = await executeWorkflowTestCase(
+        page,
+        websiteBrief,
+        {
+          id: "TC-RRC-001",
+          action: {
+            type: "run_rank_calculator",
+            module: "Rank-Up Calculator",
+            route: "https://example.com/app/rank-up-calculator",
+          },
+          assertions: [],
+        },
+        runtime
+      );
+      assert.ok(result, "Expected a result");
+      assert.equal(page.sceneName, "rank-calculator-result", "Expected calculation to run");
+    },
+  },
+  {
+    name: "run_rank_calculator fails when no numeric inputs are available",
+    async run() {
+      const page = new FakePage();
+      // Use dashboard scene which has no calculator inputs
+      page.routes.set("https://example.com/app/rank-up-calculator", "dashboard");
+      const runtime = createWorkflowRuntime({ id: "TC-RRC-002" });
+      await assert.rejects(
+        () =>
+          executeWorkflowTestCase(
+            page,
+            websiteBrief,
+            {
+              id: "TC-RRC-002",
+              action: {
+                type: "run_rank_calculator",
+                module: "Rank-Up Calculator",
+                route: "https://example.com/app/rank-up-calculator",
+              },
+            },
+            runtime
+          ),
+        /Could not find any calculator input fields/
+      );
     },
   },
 ];

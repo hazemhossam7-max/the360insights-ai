@@ -205,6 +205,352 @@ function hasModule(modules, label) {
   return unique(modules).some((item) => cleanText(item).toLowerCase() === target);
 }
 
+// ---------------------------------------------------------------------------
+// Known route hints for each module (tried before UI sidebar navigation).
+// Multiple candidates are listed in priority order.
+// ---------------------------------------------------------------------------
+const KNOWN_MODULE_ROUTE_HINTS = {
+  "dashboard": ["/dashboard", "/"],
+  "directory": ["/directory", "/athletes"],
+  "athlete 360°": ["/athlete-360", "/athlete360", "/athletes"],
+  "athlete 360": ["/athlete-360", "/athlete360", "/athletes"],
+  "collections": ["/collections"],
+  "competitions": ["/competitions"],
+  "ai opponent analysis": ["/ai-opponent-analysis", "/opponent-analysis"],
+  "technical analysis": ["/technical-analysis"],
+  "mental analysis": ["/mental-analysis"],
+  "training planner": ["/training-planner", "/training"],
+  "rank-up calculator": ["/rank-up-calculator", "/rankup-calculator"],
+  "ai insights": ["/ai-insights", "/insights"],
+  "sponsorship hub": ["/sponsorship-hub", "/sponsorship"],
+};
+
+function resolveModuleRoute(moduleName, routeByModule) {
+  const lower = cleanText(moduleName).toLowerCase();
+  const discovered = routeByModule.get(lower) || "";
+  if (discovered) return discovered;
+  const hints = KNOWN_MODULE_ROUTE_HINTS[lower] || [];
+  return hints[0] || "";
+}
+
+// ---------------------------------------------------------------------------
+// Workflow case builders – one per module
+// ---------------------------------------------------------------------------
+
+function buildDashboardWorkflowCases(route) {
+  return [
+    buildWorkflowCase({
+      title: "Workflow: Dashboard loads with real metrics content",
+      category: "Workflow data creation tests",
+      module: "Dashboard",
+      route,
+      priority: "High",
+      steps: [
+        "Log into the protected application.",
+        "Navigate to the Dashboard module.",
+        "Verify the Dashboard loads with substantive content (metrics, stats, or activity feed).",
+        "Confirm the content is not an empty state or error page.",
+      ],
+      expectedResult:
+        "The Dashboard module loads with real metrics, statistics, or activity content visible to the authenticated user.",
+      action: {
+        type: "verify_module_content",
+        module: "Dashboard",
+        route,
+        moduleAliases: ["Home", "Overview"],
+        minBodyChars: 100,
+      },
+      assertions: [],
+    }),
+  ];
+}
+
+function buildDirectoryWorkflowCases(route) {
+  return [
+    buildWorkflowCase({
+      title: "Workflow: Directory search returns athlete results",
+      category: "Workflow data creation tests",
+      module: "Directory",
+      route,
+      priority: "High",
+      steps: [
+        "Log into the protected application.",
+        "Open the Directory module.",
+        "Use the search input to search for an athlete.",
+        "Verify that results are returned after the search.",
+      ],
+      expectedResult:
+        "The Directory module accepts a search query and returns visible athlete results.",
+      action: {
+        type: "search_in_directory",
+        module: "Directory",
+        route,
+        moduleAliases: ["Athletes", "Player Directory"],
+        query: "a",
+      },
+      assertions: [],
+    }),
+  ];
+}
+
+function buildAthlete360WorkflowCases(route) {
+  return [
+    buildWorkflowCase({
+      title: "Workflow: Athlete 360° opens athlete detail view",
+      category: "Workflow data creation tests",
+      module: "Athlete 360°",
+      route,
+      priority: "High",
+      steps: [
+        "Log into the protected application.",
+        "Open the Athlete 360° module.",
+        "Click on the first visible athlete card or list item.",
+        "Verify a detail view opens with athlete-specific information.",
+      ],
+      expectedResult:
+        "An athlete detail view opens showing relevant athlete data (stats, profile, or analysis sections).",
+      action: {
+        type: "open_first_athlete",
+        module: "Athlete 360°",
+        route,
+        moduleAliases: ["Athlete 360", "Athletes"],
+      },
+      assertions: [],
+    }),
+  ];
+}
+
+function buildCompetitionsWorkflowCases(route) {
+  return [
+    buildWorkflowCase({
+      title: "Workflow: Competitions module loads competition data",
+      category: "Workflow data creation tests",
+      module: "Competitions",
+      route,
+      priority: "High",
+      steps: [
+        "Log into the protected application.",
+        "Open the Competitions module.",
+        "Verify the module loads with competition data or a list of competitions.",
+        "Confirm the content is real data, not an empty or broken state.",
+      ],
+      expectedResult:
+        "The Competitions module loads with visible competition entries or relevant competition content.",
+      action: {
+        type: "verify_module_content",
+        module: "Competitions",
+        route,
+        minBodyChars: 100,
+      },
+      assertions: [],
+    }),
+  ];
+}
+
+function buildAiOpponentAnalysisWorkflowCases(route) {
+  return [
+    buildWorkflowCase({
+      title: "Workflow: AI Opponent Analysis module loads its interface",
+      category: "Workflow data creation tests",
+      module: "AI Opponent Analysis",
+      route,
+      priority: "High",
+      steps: [
+        "Log into the protected application.",
+        "Open the AI Opponent Analysis module.",
+        "Verify the module loads with an analysis interface or results.",
+        "Confirm the module content is not blank or in an error state.",
+      ],
+      expectedResult:
+        "The AI Opponent Analysis module loads with a functional interface for opponent analysis.",
+      action: {
+        type: "verify_module_content",
+        module: "AI Opponent Analysis",
+        route,
+        moduleAliases: ["Opponent Analysis", "AI Opponent"],
+        minBodyChars: 100,
+      },
+      assertions: [],
+    }),
+  ];
+}
+
+function buildTechnicalAnalysisWorkflowCases(route) {
+  return [
+    buildWorkflowCase({
+      title: "Workflow: Technical Analysis module loads with analysis content",
+      category: "Workflow data creation tests",
+      module: "Technical Analysis",
+      route,
+      priority: "High",
+      steps: [
+        "Log into the protected application.",
+        "Open the Technical Analysis module.",
+        "Verify the module loads with technical analysis content or interface.",
+        "Confirm the content is not blank or in an error state.",
+      ],
+      expectedResult:
+        "The Technical Analysis module loads with a functional technical analysis interface or results.",
+      action: {
+        type: "verify_module_content",
+        module: "Technical Analysis",
+        route,
+        moduleAliases: ["Technical"],
+        minBodyChars: 100,
+      },
+      assertions: [],
+    }),
+  ];
+}
+
+function buildMentalAnalysisWorkflowCases(route) {
+  return [
+    buildWorkflowCase({
+      title: "Workflow: Mental Analysis module loads with analysis content",
+      category: "Workflow data creation tests",
+      module: "Mental Analysis",
+      route,
+      priority: "High",
+      steps: [
+        "Log into the protected application.",
+        "Open the Mental Analysis module.",
+        "Verify the module loads with mental analysis content or interface.",
+        "Confirm the content is not blank or in an error state.",
+      ],
+      expectedResult:
+        "The Mental Analysis module loads with mental analysis content relevant to the authenticated user.",
+      action: {
+        type: "verify_module_content",
+        module: "Mental Analysis",
+        route,
+        moduleAliases: ["Mental"],
+        minBodyChars: 100,
+      },
+      assertions: [],
+    }),
+  ];
+}
+
+function buildTrainingPlannerWorkflowCases(route) {
+  return [
+    buildWorkflowCase({
+      title: "Workflow: create training plan and verify it persists",
+      category: "Workflow data creation tests",
+      module: "Training Planner",
+      route,
+      priority: "High",
+      steps: [
+        "Log into the protected application.",
+        "Open the Training Planner module.",
+        "Create a new training plan with automation-generated name and description.",
+        "Confirm the plan appears in the list after save.",
+      ],
+      expectedResult:
+        "A real training plan can be created successfully and remains visible after save.",
+      action: {
+        type: "create_training_plan",
+        module: "Training Planner",
+        route,
+        locators: {
+          createButton:
+            'button:has-text("Create Plan"), button:has-text("New Plan"), button:has-text("Create Training Plan"), button:has-text("Add Plan"), button:has-text("Add")',
+          nameInput:
+            'input[placeholder*="plan name" i], input[placeholder*="name" i], input[name*="name" i], input[name*="title" i]',
+          submitButton:
+            'button:has-text("Save"), button:has-text("Create"), button:has-text("Submit"), button:has-text("Create Plan")',
+        },
+      },
+      assertions: [
+        { type: "created_entity_visible", entityType: "training_plan" },
+      ],
+    }),
+  ];
+}
+
+function buildRankUpCalculatorWorkflowCases(route) {
+  return [
+    buildWorkflowCase({
+      title: "Workflow: Rank-Up Calculator accepts inputs and produces output",
+      category: "Workflow data creation tests",
+      module: "Rank-Up Calculator",
+      route,
+      priority: "High",
+      steps: [
+        "Log into the protected application.",
+        "Open the Rank-Up Calculator module.",
+        "Fill in calculator inputs (scores or metrics) with test values.",
+        "Trigger the calculation.",
+        "Verify the calculator produces a visible output or result.",
+      ],
+      expectedResult:
+        "The Rank-Up Calculator accepts numeric inputs and produces a visible rank or score result.",
+      action: {
+        type: "run_rank_calculator",
+        module: "Rank-Up Calculator",
+        route,
+        moduleAliases: ["Rank Up Calculator", "RankUp", "Calculator", "Rank-Up"],
+      },
+      assertions: [],
+    }),
+  ];
+}
+
+function buildAiInsightsWorkflowCases(route) {
+  return [
+    buildWorkflowCase({
+      title: "Workflow: AI Insights module loads with insights content",
+      category: "Workflow data creation tests",
+      module: "AI Insights",
+      route,
+      priority: "High",
+      steps: [
+        "Log into the protected application.",
+        "Open the AI Insights module.",
+        "Verify the module loads with AI-generated insights or a functional interface.",
+        "Confirm the content is not blank or in an error state.",
+      ],
+      expectedResult:
+        "The AI Insights module loads with visible AI insights or a functional interface for generating them.",
+      action: {
+        type: "verify_module_content",
+        module: "AI Insights",
+        route,
+        moduleAliases: ["Insights", "AI"],
+        minBodyChars: 100,
+      },
+      assertions: [],
+    }),
+  ];
+}
+
+function buildSponsorshipHubWorkflowCases(route) {
+  return [
+    buildWorkflowCase({
+      title: "Workflow: Sponsorship Hub loads with sponsorship content",
+      category: "Workflow data creation tests",
+      module: "Sponsorship Hub",
+      route,
+      priority: "High",
+      steps: [
+        "Log into the protected application.",
+        "Open the Sponsorship Hub module.",
+        "Verify the module loads with sponsorship listings or content.",
+        "Confirm the content is not blank or in an error state.",
+      ],
+      expectedResult:
+        "The Sponsorship Hub module loads with visible sponsorship opportunities or sponsor listings.",
+      action: {
+        type: "verify_module_content",
+        module: "Sponsorship Hub",
+        route,
+        moduleAliases: ["Sponsorship", "Sponsors"],
+        minBodyChars: 100,
+      },
+      assertions: [],
+    }),
+  ];
+}
+
 function buildCollectionWorkflowCases(route) {
   return [
     buildWorkflowCase({
@@ -276,9 +622,64 @@ export function generateGroundedWebsiteTestCases(websiteBrief, options = {}) {
     drafts.push(...buildModuleCases(module, routeByModule.get(module.toLowerCase()) || ""));
   }
 
-  if (hasModule(modules, "Collections")) {
-    drafts.push(...buildCollectionWorkflowCases(routeByModule.get("collections") || ""));
-  }
+  // ---------------------------------------------------------------------------
+  // Workflow cases – always generated for the 12 known target modules.
+  // openModule() uses sidebar navigation as fallback when routes are unknown.
+  // ---------------------------------------------------------------------------
+
+  drafts.push(
+    ...buildDashboardWorkflowCases(resolveModuleRoute("dashboard", routeByModule))
+  );
+
+  drafts.push(
+    ...buildDirectoryWorkflowCases(resolveModuleRoute("directory", routeByModule))
+  );
+
+  drafts.push(
+    ...buildAthlete360WorkflowCases(resolveModuleRoute("athlete 360°", routeByModule))
+  );
+
+  drafts.push(
+    ...buildCollectionWorkflowCases(resolveModuleRoute("collections", routeByModule))
+  );
+
+  drafts.push(
+    ...buildCompetitionsWorkflowCases(resolveModuleRoute("competitions", routeByModule))
+  );
+
+  drafts.push(
+    ...buildAiOpponentAnalysisWorkflowCases(
+      resolveModuleRoute("ai opponent analysis", routeByModule)
+    )
+  );
+
+  drafts.push(
+    ...buildTechnicalAnalysisWorkflowCases(
+      resolveModuleRoute("technical analysis", routeByModule)
+    )
+  );
+
+  drafts.push(
+    ...buildMentalAnalysisWorkflowCases(resolveModuleRoute("mental analysis", routeByModule))
+  );
+
+  drafts.push(
+    ...buildTrainingPlannerWorkflowCases(resolveModuleRoute("training planner", routeByModule))
+  );
+
+  drafts.push(
+    ...buildRankUpCalculatorWorkflowCases(
+      resolveModuleRoute("rank-up calculator", routeByModule)
+    )
+  );
+
+  drafts.push(
+    ...buildAiInsightsWorkflowCases(resolveModuleRoute("ai insights", routeByModule))
+  );
+
+  drafts.push(
+    ...buildSponsorshipHubWorkflowCases(resolveModuleRoute("sponsorship hub", routeByModule))
+  );
 
   for (const page of pages.slice(0, 8)) {
     drafts.push(...buildPageCases(page));
