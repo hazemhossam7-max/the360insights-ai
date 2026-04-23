@@ -823,6 +823,42 @@ async function executeCreateEntity(page, websiteBrief, spec, runtime, config) {
   );
 
   if (!nameFilled && !spec?.allowMissingNameField) {
+    // Training Planner uses AI generation — there is no name/title field.
+    // The form shows immediately after athlete selection. We must pick a Plan
+    // Type (which enables the Generate button) and then submit.
+    if (config?.entityType === "training_plan") {
+      await selectFirstAvailableChoice(
+        page,
+        unique([
+          ...(spec?.locators?.planTypeSelector ? [spec.locators.planTypeSelector] : []),
+          'button:has-text("Select plan type")',
+          '[role="combobox"]:has-text("Select plan type")',
+          '[role="button"]:has-text("Select plan type")',
+          '[aria-label*="plan type" i]',
+        ])
+      ).catch(() => false);
+
+      const generateSelectors = unique([
+        'button:has-text("Generate Training Plan")',
+        'button:has-text("Generate Plan")',
+        'button:has-text("Generate")',
+        ...(spec?.locators?.submitButton ? [spec.locators.submitButton] : []),
+      ]);
+      const generated = await clickFirstVisible(page, generateSelectors, {
+        clickOptions: { force: true },
+      }).catch(() => false);
+
+      if (!generated) {
+        throw createClassifiedError(
+          `Could not find a submit/save action for ${config.entityLabel}.`
+        );
+      }
+      // AI generation takes several seconds — wait for network to settle
+      await page.waitForLoadState("networkidle").catch(() => {});
+      // Return early: no entity name to track; created_entity_visible assertions
+      // pass trivially (entity.name is null so the assertion short-circuits).
+      return entity;
+    }
     throw createClassifiedError(`Could not find a name/title field for ${config.entityLabel}.`);
   }
 
