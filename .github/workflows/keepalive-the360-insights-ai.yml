@@ -1,8 +1,6 @@
 name: Keep The360 Insights AI Agent Warm
 
 on:
-  schedule:
-    - cron: "*/15 * * * *"
   workflow_dispatch:
 
 jobs:
