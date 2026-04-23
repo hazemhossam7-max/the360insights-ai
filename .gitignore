@@ -5,3 +5,5 @@ data/
 playwright-report/
 test-results/
 progress_assets/
+.env
+.env.local

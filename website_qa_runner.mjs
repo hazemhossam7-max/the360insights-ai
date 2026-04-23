@@ -79,6 +79,33 @@ function cleanText(value) {
     .trim();
 }
 
+function sanitizeAuthConfig(authConfig) {
+  if (!authConfig || typeof authConfig !== "object") {
+    return undefined;
+  }
+
+  const clone = { ...authConfig };
+  if ("username" in clone) {
+    clone.username = clone.username ? "[REDACTED]" : "";
+  }
+  if ("password" in clone) {
+    clone.password = clone.password ? "[REDACTED]" : "";
+  }
+  return clone;
+}
+
+function sanitizeWebsiteBrief(websiteBrief) {
+  if (!websiteBrief || typeof websiteBrief !== "object") {
+    return websiteBrief;
+  }
+
+  const clone = { ...websiteBrief };
+  if ("authConfig" in clone) {
+    clone.authConfig = sanitizeAuthConfig(clone.authConfig);
+  }
+  return clone;
+}
+
 function escapeXml(value) {
   return String(value ?? "")
     .replace(/&/g, "&amp;")
@@ -119,6 +146,49 @@ function parseAzureDevOpsProjectUrl(value) {
   } catch {
     return { orgUrl: "", project: "" };
   }
+}
+
+function moduleSlugCandidates(moduleName) {
+  const normalized = cleanText(moduleName).toLowerCase();
+  if (!normalized) {
+    return [];
+  }
+
+  const base = normalized
+    .replace(/°/g, "")
+    .replace(/&/g, " and ")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+  const candidates = new Set([base]);
+
+  if (normalized.includes("rank-up")) {
+    candidates.add("rank-up");
+  }
+  if (normalized.includes("calculator")) {
+    candidates.add(base.replace(/-calculator$/, ""));
+  }
+  if (normalized.includes("athlete 360")) {
+    candidates.add("athlete360");
+    candidates.add("athlete-360");
+  }
+  if (normalized.includes("ai insights")) {
+    candidates.add("ai-insights");
+  }
+  if (normalized.includes("sponsorship")) {
+    candidates.add("sponsorship-hub");
+  }
+  if (normalized.includes("technical")) {
+    candidates.add("technical-analysis");
+  }
+  if (normalized.includes("mental")) {
+    candidates.add("mental-analysis");
+  }
+  if (normalized.includes("training")) {
+    candidates.add("training-planner");
+  }
+
+  return Array.from(candidates).filter(Boolean);
 }
 
 function buildAzureDevOpsConfig() {
@@ -985,10 +1055,55 @@ function preferredCaseRoute(websiteBrief, testCase) {
     return "";
   }
 
-  const matchingPage = (websiteBrief?.pages || []).find((page) =>
-    cleanText(page?.title || "").toLowerCase() === moduleName
+  const pages = Array.isArray(websiteBrief?.pages) ? websiteBrief.pages : [];
+
+  const directPageMatch = pages.find((page) => {
+    const title = cleanText(page?.title || "").toLowerCase();
+    const headings = Array.isArray(page?.headings) ? page.headings.map((item) => cleanText(item).toLowerCase()) : [];
+    return title === moduleName || headings.includes(moduleName);
+  });
+  if (directPageMatch?.url) {
+    return cleanText(directPageMatch.url);
+  }
+
+  for (const page of pages) {
+    for (const link of Array.isArray(page?.importantLinks) ? page.importantLinks : []) {
+      if (cleanText(link?.text || "").toLowerCase() === moduleName && cleanText(link?.href || "")) {
+        return cleanText(link.href);
+      }
+    }
+  }
+
+  const slugCandidates = moduleSlugCandidates(moduleName);
+  const slugMatch = pages.find((page) => {
+    const url = cleanText(page?.url || "").toLowerCase();
+    return slugCandidates.some((slug) => url.includes(`/${slug}`) || url.endsWith(slug));
+  });
+  if (slugMatch?.url) {
+    return cleanText(slugMatch.url);
+  }
+
+  const featureEvidenceMatch = (websiteBrief?.featureCandidates || []).find(
+    (feature) => cleanText(feature?.feature || "").toLowerCase() === moduleName && Array.isArray(feature?.evidence) && feature.evidence.length
   );
-  return cleanText(matchingPage?.url || "");
+  if (featureEvidenceMatch?.evidence?.[0]) {
+    return cleanText(featureEvidenceMatch.evidence[0]);
+  }
+
+  for (const page of pages) {
+    for (const link of Array.isArray(page?.importantLinks) ? page.importantLinks : []) {
+      const href = cleanText(link?.href || "");
+      if (!href) {
+        continue;
+      }
+      const loweredHref = href.toLowerCase();
+      if (slugCandidates.some((slug) => loweredHref.includes(`/${slug}`) || loweredHref.endsWith(slug))) {
+        return href;
+      }
+    }
+  }
+
+  return "";
 }
 
 async function publishExistingCaseResults(loadedCases, results) {
@@ -1611,7 +1726,7 @@ async function main() {
     notApplicable: results.filter((item) => item.status === "notapplicable").length,
     failureClassifications: mapToObject(classificationCounts),
     repeatedPageFingerprints: mapToObject(screenshotFingerprints),
-    websiteBrief,
+    websiteBrief: sanitizeWebsiteBrief(websiteBrief),
     testCases: testCaseDrafts.testCases,
     results,
     failures,
