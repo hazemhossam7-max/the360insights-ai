@@ -59,6 +59,10 @@ function buildWorkflowCase({
 
 function buildModuleCases(module, route, title) {
   const label = cleanText(module || title || route || "module");
+  // Only auth-smoke + navigation — no generic visibility checks.
+  // "Module availability" shell checks are generic page-exists tests that
+  // produce false failures; real content verification is done by the
+  // dedicated workflow cases (verify_module_content, etc.).
   return [
     buildCase({
       title: `Auth smoke: ${label} is visible after login`,
@@ -86,19 +90,6 @@ function buildModuleCases(module, route, title) {
         "Confirm the page shows a title, heading, or content area related to the selected module.",
       ],
       expectedResult: `The "${label}" module opens successfully and shows module-specific content.`,
-    }),
-    buildCase({
-      title: `Module availability: ${label} shell renders correctly`,
-      category: "Module availability tests",
-      module: label,
-      route,
-      steps: [
-        "Log into the protected application.",
-        `Open the "${label}" module.`,
-        "Confirm the main content area is not blank.",
-        "Verify at least one meaningful control, card, table, or heading is visible on the page.",
-      ],
-      expectedResult: `The "${label}" module renders meaningful authenticated content instead of an empty or broken shell.`,
     }),
   ];
 }
@@ -220,7 +211,7 @@ const KNOWN_MODULE_ROUTE_HINTS = {
   "technical analysis": ["/technical-analysis"],
   "mental analysis": ["/mental-analysis"],
   "training planner": ["/training-planner", "/training"],
-  "rank-up calculator": ["/rank-up-calculator", "/rankup-calculator"],
+  "rank-up calculator": ["/rank-up", "/rank-up-calculator", "/rankup-calculator"],
   "ai insights": ["/ai-insights", "/insights"],
   "sponsorship hub": ["/sponsorship-hub", "/sponsorship"],
 };
@@ -592,17 +583,67 @@ function buildCollectionWorkflowCases(route) {
 }
 
 export function generateGroundedWebsiteTestCases(websiteBrief, options = {}) {
-  const maxCases = Math.max(1, Math.min(50, Number(options.maxCases || 30) || 30));
+  // Default 50 — enough for 1 auth + 12 workflow + 10×2 module cases + page cases.
+  const maxCases = Math.max(1, Math.min(100, Number(options.maxCases || 50) || 50));
   const modules = unique(websiteBrief?.sidebarModules || websiteBrief?.featureCandidates?.map((item) => item?.feature));
   const pages = Array.isArray(websiteBrief?.pages) ? websiteBrief.pages : [];
-  const routeByModule = new Map(
-    pages
-      .filter((page) => cleanText(page?.title))
-      .map((page) => [cleanText(page.title).toLowerCase(), cleanText(page.url || "")])
-  );
+
+  // ---------------------------------------------------------------------------
+  // Build routeByModule from most-reliable sources first:
+  //  1. importantLinks in discovered pages (actual nav-bar href values)
+  //  2. featureCandidates evidence (unique module pages)
+  //  3. Page title → URL fallback (cleaned of " | Site Name" suffix)
+  // ---------------------------------------------------------------------------
+  const routeByModule = new Map();
+
+  // Source 1: importantLinks (sidebar nav links — most accurate)
+  for (const page of pages) {
+    for (const link of page?.importantLinks || []) {
+      const label = cleanText(link?.text || "").toLowerCase();
+      const href = cleanText(link?.href || "");
+      if (label && href && !routeByModule.has(label)) {
+        try {
+          routeByModule.set(label, new URL(href).pathname || href);
+        } catch {
+          routeByModule.set(label, href);
+        }
+      }
+    }
+    break; // All pages share the same sidebar links; only need the first page.
+  }
+
+  // Source 2: featureCandidates evidence (first URL per feature)
+  for (const candidate of websiteBrief?.featureCandidates || []) {
+    const feature = cleanText(candidate?.feature || "").toLowerCase();
+    const firstEvidence = cleanText(candidate?.evidence?.[0] || "");
+    if (feature && firstEvidence && !routeByModule.has(feature)) {
+      try {
+        routeByModule.set(feature, new URL(firstEvidence).pathname || firstEvidence);
+      } catch {
+        routeByModule.set(feature, firstEvidence);
+      }
+    }
+  }
+
+  // Source 3: page title → URL (strip " | Site Name" suffix)
+  for (const page of pages) {
+    const rawTitle = cleanText(page?.title || "");
+    const cleanedTitle = rawTitle.replace(/\s*\|.*$/, "").trim().toLowerCase();
+    const url = cleanText(page?.url || "");
+    if (cleanedTitle && url && !routeByModule.has(cleanedTitle)) {
+      try {
+        routeByModule.set(cleanedTitle, new URL(url).pathname || url);
+      } catch {
+        routeByModule.set(cleanedTitle, url);
+      }
+    }
+  }
 
   const drafts = [];
 
+  // ---------------------------------------------------------------------------
+  // 1. Auth smoke entry (always first)
+  // ---------------------------------------------------------------------------
   drafts.push(
     buildCase({
       title: "Auth smoke: login reaches the protected application shell",
@@ -618,13 +659,9 @@ export function generateGroundedWebsiteTestCases(websiteBrief, options = {}) {
     })
   );
 
-  for (const module of modules.slice(0, 10)) {
-    drafts.push(...buildModuleCases(module, routeByModule.get(module.toLowerCase()) || ""));
-  }
-
   // ---------------------------------------------------------------------------
-  // Workflow cases – always generated for the 12 known target modules.
-  // openModule() uses sidebar navigation as fallback when routes are unknown.
+  // 2. Real workflow cases — these run BEFORE shallow module checks so they
+  //    always execute regardless of the maxCases limit.
   // ---------------------------------------------------------------------------
 
   drafts.push(
@@ -647,11 +684,15 @@ export function generateGroundedWebsiteTestCases(websiteBrief, options = {}) {
     ...buildCompetitionsWorkflowCases(resolveModuleRoute("competitions", routeByModule))
   );
 
-  drafts.push(
-    ...buildAiOpponentAnalysisWorkflowCases(
-      resolveModuleRoute("ai opponent analysis", routeByModule)
-    )
-  );
+  // AI Opponent Analysis is only included when it appears in the discovered
+  // sidebar — it is not present in all deployments.
+  if (hasModule(modules, "AI Opponent Analysis") || hasModule(modules, "Opponent Analysis")) {
+    drafts.push(
+      ...buildAiOpponentAnalysisWorkflowCases(
+        resolveModuleRoute("ai opponent analysis", routeByModule)
+      )
+    );
+  }
 
   drafts.push(
     ...buildTechnicalAnalysisWorkflowCases(
@@ -680,6 +721,13 @@ export function generateGroundedWebsiteTestCases(websiteBrief, options = {}) {
   drafts.push(
     ...buildSponsorshipHubWorkflowCases(resolveModuleRoute("sponsorship hub", routeByModule))
   );
+
+  // ---------------------------------------------------------------------------
+  // 3. Shallow module auth-smoke + navigation checks (fill remaining slots)
+  // ---------------------------------------------------------------------------
+  for (const module of modules.slice(0, 10)) {
+    drafts.push(...buildModuleCases(module, routeByModule.get(module.toLowerCase()) || ""));
+  }
 
   for (const page of pages.slice(0, 8)) {
     drafts.push(...buildPageCases(page));

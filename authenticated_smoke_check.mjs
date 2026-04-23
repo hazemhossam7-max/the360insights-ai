@@ -1,6 +1,26 @@
 import fs from "node:fs/promises";
+import fsSync from "node:fs";
 import path from "node:path";
 import { chromium } from "playwright";
+
+(function loadEnvFiles() {
+  const root = process.cwd();
+  for (const name of [".env.local", ".env"]) {
+    const filePath = path.join(root, name);
+    if (!fsSync.existsSync(filePath)) continue;
+    const lines = fsSync.readFileSync(filePath, "utf8").split(/\r?\n/);
+    for (const raw of lines) {
+      const line = raw.trim();
+      if (!line || line.startsWith("#")) continue;
+      const eqIdx = line.indexOf("=");
+      if (eqIdx < 1) continue;
+      const key = line.slice(0, eqIdx).trim();
+      const val = line.slice(eqIdx + 1).trim().replace(/^['"]|['"]$/g, "");
+      if (key && !(key in process.env)) process.env[key] = val;
+    }
+    break;
+  }
+})();
 import {
   AuthenticationError,
   buildAuthConfig,

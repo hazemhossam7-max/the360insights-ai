@@ -1,6 +1,33 @@
 import fs from "node:fs/promises";
+import fsSync from "node:fs";
 import path from "node:path";
 import { chromium } from "playwright";
+
+// ---------------------------------------------------------------------------
+// Load .env.local (and .env as fallback) before anything else so that
+// APP_USERNAME, APP_PASSWORD, etc. are available via process.env.
+// Uses only built-in Node modules — no dotenv dependency required.
+// ---------------------------------------------------------------------------
+(function loadEnvFiles() {
+  const root = process.cwd();
+  for (const name of [".env.local", ".env"]) {
+    const filePath = path.join(root, name);
+    if (!fsSync.existsSync(filePath)) continue;
+    const lines = fsSync.readFileSync(filePath, "utf8").split(/\r?\n/);
+    for (const raw of lines) {
+      const line = raw.trim();
+      if (!line || line.startsWith("#")) continue;
+      const eqIdx = line.indexOf("=");
+      if (eqIdx < 1) continue;
+      const key = line.slice(0, eqIdx).trim();
+      const val = line.slice(eqIdx + 1).trim().replace(/^['"]|['"]$/g, "");
+      if (key && !(key in process.env)) {
+        process.env[key] = val;
+      }
+    }
+    break; // stop after first file found
+  }
+})();
 import { analyzeWebsite } from "./agent/website-analyzer.mjs";
 import { generateTestCasesForWebsite } from "./agent/ai-test-case-generator.mjs";
 import { createTestPlansClient } from "./agent/testplans-client.mjs";
@@ -1344,7 +1371,7 @@ async function generateWebsiteDrafts(websiteBrief, options) {
 
   if (shouldUseGroundedGenerator(websiteBrief, websiteGenerationMode)) {
     return generateGroundedWebsiteTestCases(websiteBrief, {
-      maxCases: options.websiteTargetCaseCount || 30,
+      maxCases: options.websiteTargetCaseCount || 50,
     });
   }
 
@@ -1383,7 +1410,7 @@ async function main() {
   const geminiApiKey = readEnv("GEMINI_API_KEY");
   const geminiModel = readEnv("GEMINI_MODEL");
   const geminiBaseUrl = readEnv("GEMINI_BASE_URL");
-  const websiteTargetCaseCount = parsePositiveInteger(readEnv("WEBSITE_TARGET_CASE_COUNT")) || 30;
+  const websiteTargetCaseCount = parsePositiveInteger(readEnv("WEBSITE_TARGET_CASE_COUNT")) || 50;
   const websiteCaseGenerator = readEnv("WEBSITE_CASE_GENERATOR");
   const websiteGenerationMode = resolveWebsiteGenerationMode(websiteCaseGenerator);
   const executeGeneratedCases = shouldExecuteGeneratedCases(websiteCaseGenerator);
