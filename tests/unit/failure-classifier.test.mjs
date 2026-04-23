@@ -38,6 +38,27 @@ const cases = [
       assert.equal(classification, "Authentication/access issue");
     },
   },
+  {
+    name: "classifyFailure treats runner workflow gaps as automation issues",
+    run() {
+      const error = new Error("Could not find a create action for Codex Training Plan.");
+      error.classification = "automation_issue";
+
+      const classification = classifyFailure({
+        error,
+        pageContext: {
+          url: "https://the360insights.ai/training-planner",
+          title: "Training Planner | The360 Insights",
+          reachedProtectedPage: true,
+        },
+        authState: {
+          authenticated: true,
+        },
+      });
+
+      assert.equal(classification, "Automation issue");
+    },
+  },
 ];
 
 let failures = 0;

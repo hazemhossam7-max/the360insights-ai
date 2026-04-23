@@ -20,6 +20,10 @@ export function classifyFailure({ error, pageContext, authState, screenshotFinge
     return "Authentication/access issue";
   }
 
+  if (error?.classification === "automation_issue") {
+    return "Automation issue";
+  }
+
   if (explicitlyUnauthenticated && !reachedProtectedPage) {
     return "Authentication/access issue";
   }
@@ -63,6 +67,22 @@ export function classifyFailure({ error, pageContext, authState, screenshotFinge
     ])
   ) {
     return "Unsupported/unconfirmed feature assumption";
+  }
+
+  if (
+    includesAny(message, [
+      "could not find a create action",
+      "could not find a submit/save action",
+      "could not find a name/title field",
+      "could not find any calculator input fields",
+      "could not find a search input",
+      "no created entity is available",
+      "intercepts pointer events",
+      "element is not enabled",
+      "remained unchanged after attempting to satisfy required inputs",
+    ])
+  ) {
+    return "Automation issue";
   }
 
   if (!reachedProtectedPage || screenshotFingerprintCount >= 3) {

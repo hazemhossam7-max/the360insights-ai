@@ -1,3 +1,5 @@
+import { canUseOpenAIWorkflowAssistant, planWorkflowRecovery } from "./openai-workflow-assistant.mjs";
+
 function cleanText(value) {
   return String(value || "")
     .replace(/\s+/g, " ")
@@ -16,6 +18,13 @@ function unique(values) {
 
 function escapeRegExp(value) {
   return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function createClassifiedError(message, classification = "automation_issue", details = {}) {
+  const error = new Error(cleanText(message));
+  error.classification = classification;
+  Object.assign(error, details);
+  return error;
 }
 
 function normalizeAction(action) {
@@ -267,12 +276,23 @@ async function isVisibleLocator(locator) {
   }
 }
 
-async function findFirstVisibleLocator(page, selectors) {
+function buildLocatorTarget(pageOrScope, selector) {
+  if (!pageOrScope || !selector) {
+    return null;
+  }
+  if (typeof pageOrScope.locator === "function") {
+    return pageOrScope.locator(selector).first();
+  }
+  return null;
+}
+
+async function findFirstVisibleLocator(page, selectors, options = {}) {
+  const scope = options?.scope && typeof options.scope.locator === "function" ? options.scope : null;
   for (const selector of unique(selectors)) {
     if (!selector) {
       continue;
     }
-    const locator = page.locator(selector).first();
+    const locator = buildLocatorTarget(scope || page, selector);
     if (await isVisibleLocator(locator)) {
       return { selector, locator };
     }
@@ -280,22 +300,40 @@ async function findFirstVisibleLocator(page, selectors) {
   return null;
 }
 
-async function clickFirstVisible(page, selectors) {
-  const found = await findFirstVisibleLocator(page, selectors);
+async function clickFirstVisible(page, selectors, options = {}) {
+  const found = await findFirstVisibleLocator(page, selectors, options);
   if (!found) {
     return false;
   }
-  await found.locator.click();
+  await found.locator.click(options?.clickOptions || {});
   return true;
 }
 
-async function fillFirstVisible(page, selectors, value) {
-  const found = await findFirstVisibleLocator(page, selectors);
+async function fillFirstVisible(page, selectors, value, options = {}) {
+  const found = await findFirstVisibleLocator(page, selectors, options);
   if (!found) {
     return false;
   }
   await found.locator.fill(String(value ?? ""));
   return true;
+}
+
+async function findActiveDialogScope(page) {
+  const selectors = [
+    '[role="dialog"]',
+    '[data-state="open"][role="dialog"]',
+    '[data-state="open"] [role="dialog"]',
+    '[data-state="open"]',
+  ];
+
+  for (const selector of selectors) {
+    const locator = page.locator(selector).first();
+    if (await isVisibleLocator(locator)) {
+      return locator;
+    }
+  }
+
+  return null;
 }
 
 async function readBodyText(page) {
@@ -304,6 +342,111 @@ async function readBodyText(page) {
   } catch {
     return "";
   }
+}
+
+async function tryEvaluate(page, expression, fallback = []) {
+  try {
+    if (typeof page.evaluate !== "function") {
+      return fallback;
+    }
+    const result = await page.evaluate(expression);
+    return Array.isArray(result) ? result.map((item) => cleanText(item)).filter(Boolean) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+async function captureWorkflowPageSnapshot(page) {
+  const title = typeof page.title === "function" ? cleanText(await page.title().catch(() => "")) : "";
+  const body = await readBodyText(page);
+  const buttons = await tryEvaluate(
+    page,
+    () =>
+      Array.from(document.querySelectorAll("button,[role='button'],a"))
+        .map((item) => item.innerText || item.getAttribute("aria-label") || "")
+        .slice(0, 20)
+  );
+  const inputs = await tryEvaluate(
+    page,
+    () =>
+      Array.from(document.querySelectorAll("input, textarea, select, [role='combobox']"))
+        .map((item) =>
+          item.getAttribute("aria-label") ||
+          item.getAttribute("placeholder") ||
+          item.getAttribute("name") ||
+          item.getAttribute("id") ||
+          item.textContent ||
+          ""
+        )
+        .slice(0, 20)
+  );
+
+  return {
+    url: cleanText(typeof page.url === "function" ? page.url() : ""),
+    title,
+    bodySnippet: body.slice(0, 1200),
+    buttons,
+    inputs,
+  };
+}
+
+async function applyWorkflowRecoveryActions(page, actions = []) {
+  for (const action of Array.isArray(actions) ? actions : []) {
+    const type = cleanText(action?.type).toLowerCase();
+    if (!type) {
+      continue;
+    }
+
+    if (type === "click_text") {
+      await clickFirstVisible(page, buildTextSelectors(action?.text || "", ["button", "link", "generic"]), {
+        clickOptions: { force: true },
+      }).catch(() => false);
+      continue;
+    }
+
+    if (type === "click_selector") {
+      await clickFirstVisible(page, [action?.selector || ""], {
+        clickOptions: { force: true },
+      }).catch(() => false);
+      continue;
+    }
+
+    if (type === "fill_selector") {
+      await fillFirstVisible(page, [action?.selector || ""], action?.value || "").catch(() => false);
+      continue;
+    }
+
+    if (type === "press_key" && typeof page.keyboard?.press === "function") {
+      await page.keyboard.press(cleanText(action?.key || "Enter")).catch(() => {});
+      continue;
+    }
+
+    if (type === "choose_first_option") {
+      await chooseFirstAvailableOption(page).catch(() => false);
+    }
+  }
+
+  await page.waitForLoadState("networkidle").catch(() => {});
+}
+
+async function attemptOpenAIWorkflowRecovery(page, goal, error) {
+  if (!canUseOpenAIWorkflowAssistant()) {
+    return null;
+  }
+
+  const pageSnapshot = await captureWorkflowPageSnapshot(page);
+  const plan = await planWorkflowRecovery({
+    goal,
+    errorMessage: cleanText(error?.message || error),
+    pageSnapshot,
+  }).catch(() => null);
+
+  if (!plan?.actions?.length) {
+    return null;
+  }
+
+  await applyWorkflowRecoveryActions(page, plan.actions).catch(() => {});
+  return plan;
 }
 
 function matchesExpectedText(text, expectedValues) {
@@ -351,6 +494,37 @@ async function openModule(page, websiteBrief, spec, config) {
   };
 }
 
+async function chooseFirstAvailableOption(page, options = {}) {
+  const optionSelectors = unique([
+    ...(options?.optionSelectors || []),
+    '[role="option"]:not([aria-disabled="true"])',
+    '[data-radix-collection-item]:not([aria-disabled="true"])',
+    '[cmdk-item]:not([data-disabled])',
+    'li[role="option"]',
+    '[data-slot="option"]',
+  ]);
+
+  return clickFirstVisible(page, optionSelectors, {
+    clickOptions: { force: true },
+  });
+}
+
+async function selectFirstAvailableChoice(page, triggerSelectors, options = {}) {
+  const opened = await clickFirstVisible(page, triggerSelectors, {
+    clickOptions: { force: true },
+  });
+  if (!opened) {
+    return false;
+  }
+
+  await page.waitForLoadState("networkidle").catch(() => {});
+  const picked = await chooseFirstAvailableOption(page, options);
+  if (picked) {
+    await page.waitForLoadState("networkidle").catch(() => {});
+  }
+  return picked;
+}
+
 function buildRuntimeEntity(config, spec, runtime) {
   const name = buildEntityName(spec, runtime, config.entityLabel);
   const description = buildEntityDescription(spec, runtime);
@@ -372,21 +546,142 @@ async function assertTextVisible(page, expectedValues, message) {
   }
 }
 
+async function primeTrainingPlannerContext(page, spec) {
+  const body = (await readBodyText(page)).toLowerCase();
+  const athleteCardSelectors = unique([
+    ...(spec?.locators?.athleteCard ? [spec.locators.athleteCard] : []),
+    '[class*="athlete-card"]',
+    '[class*="player-card"]',
+    '[data-testid*="athlete"]',
+    '[class*="card"]',
+  ]);
+
+  const athleteTriggerSelectors = unique([
+    ...(spec?.locators?.athleteSelector ? [spec.locators.athleteSelector] : []),
+    'button:has-text("Choose athlete")',
+    'button:has-text("Select athlete")',
+    'button:has-text("Search athletes")',
+    '[role="combobox"]:has-text("Choose athlete")',
+    '[role="combobox"]:has-text("Select athlete")',
+    '[placeholder*="search athletes" i]',
+  ]);
+
+  if (body.includes("available athletes") || body.includes("quick access")) {
+    const selected =
+      (await clickFirstVisible(page, athleteCardSelectors, { clickOptions: { force: true } }).catch(() => false)) ||
+      (await selectFirstAvailableChoice(page, athleteTriggerSelectors).catch(() => false));
+
+    if (selected) {
+      await page.waitForLoadState("networkidle").catch(() => {});
+    }
+  }
+}
+
+async function satisfyRankCalculatorPrerequisites(page, spec) {
+  const athleteSelectors = unique([
+    ...(spec?.locators?.athleteSelector ? [spec.locators.athleteSelector] : []),
+    'button:has-text("Choose athlete")',
+    'button:has-text("Select athlete")',
+    '[role="combobox"]:has-text("Choose athlete")',
+    '[role="combobox"]:has-text("Select athlete")',
+    'select[name*="athlete" i]',
+  ]);
+  const rankingTypeSelectors = unique([
+    ...(spec?.locators?.rankingTypeSelector ? [spec.locators.rankingTypeSelector] : []),
+    'button:has-text("Select athlete first")',
+    'button:has-text("Ranking Type")',
+    '[role="combobox"]:has-text("Ranking Type")',
+    'select[name*="ranking" i]',
+  ]);
+  const weightSelectors = unique([
+    ...(spec?.locators?.weightSelector ? [spec.locators.weightSelector] : []),
+    'button:has-text("Weight Category")',
+    '[role="combobox"]:has-text("Weight Category")',
+    'select[name*="weight" i]',
+  ]);
+
+  await selectFirstAvailableChoice(page, athleteSelectors).catch(() => false);
+  await selectFirstAvailableChoice(page, rankingTypeSelectors).catch(() => false);
+  await selectFirstAvailableChoice(page, weightSelectors).catch(() => false);
+
+  await fillFirstVisible(
+    page,
+    unique([
+      'input[name*="target" i]',
+      'input[placeholder*="target rank" i]',
+      'input[type="number"]',
+      ...(spec?.locators?.targetRankInput ? [spec.locators.targetRankInput] : []),
+    ]),
+    spec?.targetRank || "75"
+  ).catch(() => false);
+
+  await fillFirstVisible(
+    page,
+    unique([
+      'textarea[placeholder*="specific requirements" i]',
+      'textarea[placeholder*="context" i]',
+      'textarea',
+      ...(spec?.locators?.notesInput ? [spec.locators.notesInput] : []),
+    ]),
+    cleanText(spec?.notes || "Automation rank-up validation")
+  ).catch(() => false);
+}
+
 async function executeCreateEntity(page, websiteBrief, spec, runtime, config) {
   const entity = buildRuntimeEntity(config, spec, runtime);
   await openModule(page, websiteBrief, spec, config);
+
+  if (config?.entityType === "training_plan") {
+    await primeTrainingPlannerContext(page, spec).catch(() => {});
+  }
 
   const createSelectors = unique([
     ...(spec?.locators?.createButton ? [spec.locators.createButton] : []),
     ...config.createLabels.flatMap((label) => buildTextSelectors(label, ["button", "generic", "link"])),
   ]);
-  const createTriggered = await clickFirstVisible(page, createSelectors);
+  const createTriggered = await clickFirstVisible(page, createSelectors, {
+    clickOptions: { force: true },
+  });
   if (!createTriggered && !spec?.skipCreateTrigger) {
-    throw new Error(`Could not find a create action for ${config.entityLabel}.`);
+    const directNameFieldExists = Boolean(
+      await findFirstVisibleLocator(
+        page,
+        unique([
+          ...(spec?.locators?.nameInput ? [spec.locators.nameInput] : []),
+          ...buildFieldSelectors(["name", "title", `${config.entityType} name`], "title"),
+        ])
+      )
+    );
+
+    if (!directNameFieldExists) {
+      await attemptOpenAIWorkflowRecovery(
+        page,
+        `Find the create flow for ${config.entityLabel} and expose the form fields`,
+        createClassifiedError(`Could not find a create action for ${config.entityLabel}.`)
+      ).catch(() => null);
+    }
+  }
+
+  let scope = createTriggered ? await findActiveDialogScope(page) : null;
+
+  if (!createTriggered && !scope) {
+    const directNameFieldExists = Boolean(
+      await findFirstVisibleLocator(
+        page,
+        unique([
+          ...(spec?.locators?.nameInput ? [spec.locators.nameInput] : []),
+          ...buildFieldSelectors(["name", "title", `${config.entityType} name`], "title"),
+        ])
+      )
+    );
+    if (!directNameFieldExists && !spec?.skipCreateTrigger) {
+      throw createClassifiedError(`Could not find a create action for ${config.entityLabel}.`);
+    }
   }
 
   if (createTriggered) {
     await page.waitForLoadState("networkidle").catch(() => {});
+    scope = await findActiveDialogScope(page);
   }
 
   const nameFilled = await fillFirstVisible(
@@ -395,7 +690,8 @@ async function executeCreateEntity(page, websiteBrief, spec, runtime, config) {
       ...(spec?.locators?.nameInput ? [spec.locators.nameInput] : []),
       ...buildFieldSelectors(["name", "title", `${config.entityType} name`], "title"),
     ]),
-    entity.name
+    entity.name,
+    { scope }
   );
 
   const descriptionValue = entity.description;
@@ -405,11 +701,12 @@ async function executeCreateEntity(page, websiteBrief, spec, runtime, config) {
       ...(spec?.locators?.descriptionInput ? [spec.locators.descriptionInput] : []),
       ...buildFieldSelectors(["description", "notes", "summary", "Add a description"], "description"),
     ]),
-    descriptionValue
+    descriptionValue,
+    { scope }
   );
 
   if (!nameFilled && !spec?.allowMissingNameField) {
-    throw new Error(`Could not find a name/title field for ${config.entityLabel}.`);
+    throw createClassifiedError(`Could not find a name/title field for ${config.entityLabel}.`);
   }
 
   if (spec?.fields && typeof spec.fields === "object") {
@@ -420,7 +717,8 @@ async function executeCreateEntity(page, websiteBrief, spec, runtime, config) {
       await fillFirstVisible(
         page,
         buildFieldSelectors([fieldName]),
-        interpolateTemplate(fieldValue, runtime)
+        interpolateTemplate(fieldValue, runtime),
+        { scope }
       ).catch(() => {});
     }
   }
@@ -431,7 +729,8 @@ async function executeCreateEntity(page, websiteBrief, spec, runtime, config) {
       unique([
         ...(spec?.locators?.colorOption ? [spec.locators.colorOption] : []),
         ...buildCollectionColorSelectors(entity.color),
-      ])
+      ]),
+      { scope, clickOptions: { force: true } }
     ).catch(() => false);
 
     await clickFirstVisible(
@@ -439,7 +738,8 @@ async function executeCreateEntity(page, websiteBrief, spec, runtime, config) {
       unique([
         ...(spec?.locators?.iconOption ? [spec.locators.iconOption] : []),
         ...buildCollectionIconSelectors(entity.icon),
-      ])
+      ]),
+      { scope, clickOptions: { force: true } }
     ).catch(() => false);
   }
 
@@ -448,9 +748,31 @@ async function executeCreateEntity(page, websiteBrief, spec, runtime, config) {
     ...config.submitLabels.flatMap((label) => buildTextSelectors(label, ["button", "generic"])),
   ]);
 
-  const submitted = await clickFirstVisible(page, submitSelectors);
+  let submitted = await clickFirstVisible(page, submitSelectors, {
+    scope,
+    clickOptions: { force: true },
+  });
+  if (!submitted && !scope) {
+    scope = await findActiveDialogScope(page);
+    submitted = await clickFirstVisible(page, submitSelectors, {
+      scope,
+      clickOptions: { force: true },
+    });
+  }
   if (!submitted) {
-    throw new Error(`Could not find a submit/save action for ${config.entityLabel}.`);
+    await attemptOpenAIWorkflowRecovery(
+      page,
+      `Submit the ${config.entityLabel} form from the active page state`,
+      createClassifiedError(`Could not find a submit/save action for ${config.entityLabel}.`)
+    ).catch(() => null);
+
+    submitted = await clickFirstVisible(page, submitSelectors, {
+      scope: await findActiveDialogScope(page),
+      clickOptions: { force: true },
+    });
+  }
+  if (!submitted) {
+    throw createClassifiedError(`Could not find a submit/save action for ${config.entityLabel}.`);
   }
 
   await page.waitForLoadState("networkidle").catch(() => {});
@@ -704,6 +1026,7 @@ async function executeRunRankCalculator(page, websiteBrief, spec, runtime) {
   });
 
   const priorBody = await readBodyText(page);
+  await satisfyRankCalculatorPrerequisites(page, spec).catch(() => {});
 
   const inputs = spec?.inputs && typeof spec.inputs === "object" ? spec.inputs : {};
   let filledAny = false;
@@ -736,7 +1059,7 @@ async function executeRunRankCalculator(page, websiteBrief, spec, runtime) {
   }
 
   if (!filledAny) {
-    throw new Error(
+    throw createClassifiedError(
       `Could not find any calculator input fields in the ${moduleLabel} module. ` +
         `The calculator form may not be rendering or no numeric inputs are available.`
     );
@@ -754,7 +1077,9 @@ async function executeRunRankCalculator(page, websiteBrief, spec, runtime) {
     '[role="button"]:has-text("Calculate")',
   ]);
 
-  const triggered = await clickFirstVisible(page, calculateSelectors);
+  let triggered = await clickFirstVisible(page, calculateSelectors, {
+    clickOptions: { force: true },
+  });
   if (!triggered) {
     await page.keyboard.press("Enter").catch(() => {});
   }
@@ -763,10 +1088,35 @@ async function executeRunRankCalculator(page, websiteBrief, spec, runtime) {
 
   const postBody = await readBodyText(page);
 
-  if (postBody === priorBody && !triggered) {
-    throw new Error(
+  if (postBody === priorBody) {
+    const recoveryPlan = await attemptOpenAIWorkflowRecovery(
+      page,
+      `Satisfy the required inputs in ${moduleLabel} and trigger calculation`,
+      createClassifiedError(
+        `The ${moduleLabel} calculator remained unchanged after the initial input and submit attempt.`
+      )
+    ).catch(() => null);
+
+    if (recoveryPlan) {
+      triggered = await clickFirstVisible(page, calculateSelectors, {
+        clickOptions: { force: true },
+      }).catch(() => false);
+      await page.waitForLoadState("networkidle").catch(() => {});
+    }
+  }
+
+  const finalBody = await readBodyText(page);
+
+  if (finalBody === priorBody && !triggered) {
+    throw createClassifiedError(
       `The ${moduleLabel} calculator did not produce any output after filling inputs and triggering calculation. ` +
         `The calculation functionality may be broken or the submit button is missing.`
+    );
+  }
+
+  if (finalBody === priorBody) {
+    throw createClassifiedError(
+      `The ${moduleLabel} calculator remained unchanged after attempting to satisfy required inputs.`
     );
   }
 
