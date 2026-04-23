@@ -623,15 +623,24 @@ async function primeTrainingPlannerContext(page, spec) {
     `[role="button"]:has-text("${name}")`,
     `li:has-text("${name}")`,
     `button:has-text("${name}")`,
-    `div:has-text("${name}")`,
+    `a:has-text("${name}")`,
+    `span:has-text("${name}")`,
   ]);
 
   const athleteCardSelectors = unique([
     ...(spec?.locators?.athleteCard ? [spec.locators.athleteCard] : []),
     ...directTextSelectors,
+    // Proven selectors from executeOpenFirstAthlete (TC-004 passed with these)
     '[class*="athlete-card"]',
+    '[class*="AthleteCard"]',
+    '[class*="athlete"][class*="item"]',
     '[class*="player-card"]',
+    '[class*="PlayerCard"]',
     '[data-testid*="athlete"]',
+    '[class*="grid"] [class*="card"]:first-child',
+    '[class*="list"] [class*="item"]:first-child',
+    '[class*="card"]:first-child',
+    'table tbody tr:first-child a',
   ]);
 
   const clickedCard = await clickFirstVisible(page, athleteCardSelectors, {
@@ -641,8 +650,14 @@ async function primeTrainingPlannerContext(page, spec) {
   if (clickedCard) {
     await page.waitForLoadState("networkidle").catch(() => {});
     const newBody = (await readBodyText(page)).toLowerCase();
-    // If we left the selection screen, we're done.
-    if (!newBody.includes("select athlete for") && !newBody.includes("choose an athlete")) {
+    // Training Planner is a React SPA — URL stays on /training-planner after
+    // athlete selection. Success = selection screen text is gone from the body.
+    const selectionScreenGone =
+      !newBody.includes("select athlete for") &&
+      !newBody.includes("choose an athlete") &&
+      !newBody.includes("available athletes") &&
+      !newBody.includes("quick access");
+    if (selectionScreenGone) {
       return;
     }
   }
